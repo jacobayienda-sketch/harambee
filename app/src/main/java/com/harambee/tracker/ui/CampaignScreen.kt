@@ -77,6 +77,7 @@ fun CampaignScreen(
     onPledges: () -> Unit,
     onCollectors: () -> Unit,
     onMembers: () -> Unit,
+    onActivity: () -> Unit,
 ) {
     val repository = appContainer().repository
     val context = LocalContext.current
@@ -112,6 +113,7 @@ fun CampaignScreen(
                     DropdownMenuItem(text = { Text("Pledge reminders") }, onClick = { menuOpen = false; onPledges() })
                     DropdownMenuItem(text = { Text("Collectors (other numbers)") }, onClick = { menuOpen = false; onCollectors() })
                     DropdownMenuItem(text = { Text("Members: who hasn't contributed") }, onClick = { menuOpen = false; onMembers() })
+                    DropdownMenuItem(text = { Text("Activity history") }, onClick = { menuOpen = false; onActivity() })
                     DropdownMenuItem(text = { Text("Import messages or a list") }, onClick = { menuOpen = false; onImport() })
                     DropdownMenuItem(text = { Text("Export to spreadsheet (CSV)") }, onClick = {
                         menuOpen = false

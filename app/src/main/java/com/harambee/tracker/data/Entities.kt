@@ -6,7 +6,9 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(tableName = "campaigns")
 data class Campaign(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -30,6 +32,7 @@ data class Campaign(
 )
 
 /** Another committee member whose number also receives contributions. */
+@Serializable
 @Entity(
     tableName = "collectors",
     indices = [Index("campaignId")],
@@ -43,6 +46,7 @@ data class Collector(
 )
 
 /** A member of a welfare / church / workplace group, reused across Harambees. */
+@Serializable
 @Entity(tableName = "members", indices = [Index("groupName")])
 data class Member(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -83,6 +87,7 @@ object Source {
     }
 }
 
+@Serializable
 @Entity(
     tableName = "contributions",
     indices = [Index(value = ["mpesaCode"], unique = true), Index("campaignId"), Index("contributorKey")],
@@ -114,6 +119,7 @@ data class Contribution(
 )
 
 /** A preferred display name for everyone who pays from the same number. */
+@Serializable
 @Entity(tableName = "contributor_aliases")
 data class ContributorAlias(
     @PrimaryKey val contributorKey: String,
@@ -132,4 +138,19 @@ data class CampaignSummary(
     val totalCents: Long,
     val pledgedCents: Long,
     val paidCount: Int,
+    val todayCents: Long,
+    val todayCount: Int,
+    val lastPaymentAt: Long?,
+)
+
+/** Every change, so the committee can see who was added, edited or removed and when. Kept even after deletions. */
+@Serializable
+@Entity(tableName = "activity_log", indices = [Index("campaignId")])
+data class ActivityEntry(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val at: Long = System.currentTimeMillis(),
+    val campaignId: Long?,
+    val contributionId: Long?,
+    val action: String,
+    val detail: String,
 )

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Google Play build: no SMS access. Payments come in by paste, share or typing. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.RECEIVE_SMS" tools:node="remove" tools:ignore="PermissionImpliesUnsupportedChromeOsHardware" />
+    <uses-permission android:name="android.permission.READ_SMS" tools:node="remove" tools:ignore="PermissionImpliesUnsupportedChromeOsHardware" />
+
+    <application>
+        <receiver android:name=".sms.SmsReceiver" tools:node="remove" />
+    </application>
+</manifest>

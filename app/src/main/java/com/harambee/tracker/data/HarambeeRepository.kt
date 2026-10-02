@@ -7,6 +7,8 @@ import com.harambee.tracker.core.Names
 import com.harambee.tracker.core.ParsedList
 import com.harambee.tracker.core.Phone
 import kotlinx.coroutines.sync.Mutex
+import androidx.room.withTransaction
+import com.harambee.tracker.core.Money
 import kotlinx.coroutines.sync.withLock
 
 sealed interface IngestResult {
@@ -65,11 +67,25 @@ data class ReviewInfo(
     val listMatch: Contribution?,
 )
 
-class HarambeeRepository(private val dao: HarambeeDao) {
+class HarambeeRepository(private val db: HarambeeDatabase) {
+    private val dao = db.dao()
+
     /** SMS can arrive while an inbox scan is running; serialise writes so codes are checked once. */
     private val lock = Mutex()
 
-    val campaignSummaries = dao.observeCampaignSummaries()
+    /** One write at a time, and each one all-or-nothing: a crash half way never leaves a broken list. */
+    private suspend fun <T> locked(block: suspend () -> T): T = lock.withLock { db.withTransaction { block() } }
+
+    private suspend fun log(campaignId: Long?, contributionId: Long?, action: String, detail: String) =
+        dao.insertActivity(ActivityEntry(campaignId = campaignId, contributionId = contributionId, action = action, detail = detail))
+
+    private fun describe(c: Contribution) =
+        "${c.listName ?: c.senderName} KES ${Money.format(c.amountCents)}" + (c.mpesaCode?.let { " ($it)" } ?: "")
+
+    fun activity(campaignId: Long) = dao.observeActivity(campaignId)
+    val allActivity = dao.observeAllActivity()
+
+    fun campaignSummaries(todayStart: Long) = dao.observeCampaignSummaries(todayStart)
     val campaigns = dao.observeCampaigns()
     val pending = dao.observePending()
     val pendingCount = dao.observePendingCount()
@@ -83,10 +99,24 @@ class HarambeeRepository(private val dao: HarambeeDao) {
     suspend fun totalFor(campaignId: Long) = dao.totalFor(campaignId)
     suspend fun earliestActiveStart() = dao.earliestActiveStart()
 
-    suspend fun saveCampaign(campaign: Campaign): Long =
-        if (campaign.id == 0L) dao.insertCampaign(campaign) else campaign.id.also { dao.updateCampaign(campaign) }
+    suspend fun saveCampaign(campaign: Campaign): Long = locked {
+        if (campaign.id == 0L) {
+            dao.insertCampaign(campaign).also { log(it, null, "Created", "Harambee \"${campaign.name}\" created") }
+        } else {
+            val old = dao.getCampaign(campaign.id)
+            dao.updateCampaign(campaign)
+            val action = when {
+                old?.isActive == true && !campaign.isActive -> "Closed"
+                old?.isActive == false && campaign.isActive -> "Reopened"
+                else -> "Edited"
+            }
+            if (old != campaign) log(campaign.id, null, action, "Harambee details ${action.lowercase()}")
+            campaign.id
+        }
+    }
 
-    suspend fun deleteCampaign(campaign: Campaign) = lock.withLock {
+    suspend fun deleteCampaign(campaign: Campaign) = locked {
+        log(campaign.id, null, "Deleted", "Harambee \"${campaign.name}\" deleted")
         dao.deleteManualContributions(campaign.id)
         dao.detachContributions(campaign.id)
         dao.deleteCampaign(campaign)
@@ -103,7 +133,7 @@ class HarambeeRepository(private val dao: HarambeeDao) {
         autoConfirm: Boolean = false,
         forcedCampaignId: Long? = null,
         collectorId: Long? = null,
-    ): IngestResult = lock.withLock {
+    ): IngestResult = locked {
         when (val message = MpesaParser.parse(body)) {
             MpesaMessage.NotRelevant -> IngestResult.Ignored
             is MpesaMessage.Reversal -> {
@@ -111,6 +141,7 @@ class HarambeeRepository(private val dao: HarambeeDao) {
                 if (original != null && original.status != Status.REVERSED) {
                     val reversed = original.copy(status = Status.REVERSED, note = appendNote(original.note, "Reversed by Safaricom"))
                     dao.updateContribution(reversed)
+                    log(reversed.campaignId, reversed.id, "Reversed", describe(reversed) + " reversed by Safaricom")
                     IngestResult.Reversed(reversed)
                 } else {
                     IngestResult.Ignored
@@ -155,10 +186,10 @@ class HarambeeRepository(private val dao: HarambeeDao) {
     }
 
     /** "Add ✅": counts a pending payment in [campaignId], ticking a matching pledge when there is one. */
-    suspend fun confirm(contributionId: Long, campaignId: Long, listName: String? = null): ConfirmResult? = lock.withLock {
+    suspend fun confirm(contributionId: Long, campaignId: Long, listName: String? = null): ConfirmResult? = locked {
         // Only payments still waiting; a second tap on a notification must not count anything twice.
-        val contribution = dao.getContribution(contributionId)?.takeIf { it.status == Status.PENDING } ?: return@withLock null
-        val campaign = dao.getCampaign(campaignId) ?: return@withLock null
+        val contribution = dao.getContribution(contributionId)?.takeIf { it.status == Status.PENDING } ?: return@locked null
+        val campaign = dao.getCampaign(campaignId) ?: return@locked null
         confirmLocked(contribution, campaign, listName)
     }
 
@@ -191,12 +222,24 @@ class HarambeeRepository(private val dao: HarambeeDao) {
             dao.updateContribution(counted)
             counted to false
         }
+        log(campaign.id, result.first.id, if (result.second) "Ticked ✅" else "Added ✅", describe(result.first))
         return ConfirmResult(result.first, campaign, result.second, dao.totalFor(campaign.id))
     }
 
     /** "Not a contribution": kept (so the code stays blocked) but never counted. */
-    suspend fun reject(contributionId: Long) = lock.withLock {
-        dao.getContribution(contributionId)?.takeIf { it.status == Status.PENDING }?.let { dao.updateContribution(it.copy(status = Status.EXCLUDED)) }
+    suspend fun reject(contributionId: Long) = locked {
+        dao.getContribution(contributionId)?.takeIf { it.status == Status.PENDING }?.let {
+            dao.updateContribution(it.copy(status = Status.EXCLUDED))
+            log(it.campaignId, it.id, "Not a contribution", describe(it))
+        }
+    }
+
+    /** Undo for "Not a contribution": puts the payment back in the review list. */
+    suspend fun returnToReview(contributionId: Long) = locked {
+        dao.getContribution(contributionId)?.takeIf { it.status == Status.EXCLUDED && it.mpesaCode != null }?.let {
+            dao.updateContribution(it.copy(status = Status.PENDING))
+            log(it.campaignId, it.id, "Back to review", describe(it))
+        }
     }
 
     /**
@@ -229,9 +272,9 @@ class HarambeeRepository(private val dao: HarambeeDao) {
         note: String,
         pledged: Boolean,
         collectorId: Long? = null,
-    ): AddResult = lock.withLock {
+    ): AddResult = locked {
         val code = mpesaCode?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
-        if (code != null && dao.findByCode(code) != null) return@withLock AddResult.DuplicateCode
+        if (code != null && dao.findByCode(code) != null) return@locked AddResult.DuplicateCode
         val normalizedPhone = Phone.normalize(phone)
         val contribution = Contribution(
             campaignId = campaignId,
@@ -248,15 +291,17 @@ class HarambeeRepository(private val dao: HarambeeDao) {
             collectorId = collectorId,
         )
         val id = dao.insertContribution(contribution)
-        if (id == -1L) AddResult.DuplicateCode else AddResult.Added(id)
+        if (id == -1L) return@locked AddResult.DuplicateCode
+        log(campaignId, id, if (pledged) "Pledge added" else "Added ✅", "${Source.label(source)}: " + describe(contribution))
+        AddResult.Added(id)
     }
 
     /**
      * Brings in a list that was already circulating on WhatsApp. Lines that are already recorded
      * (same person, same amount) are linked rather than added twice.
      */
-    suspend fun importWhatsAppList(campaignId: Long, list: ParsedList): ListImportSummary = lock.withLock {
-        val campaign = dao.getCampaign(campaignId) ?: return@withLock ListImportSummary(0, 0, 0, 0)
+    suspend fun importWhatsAppList(campaignId: Long, list: ParsedList): ListImportSummary = locked {
+        val campaign = dao.getCampaign(campaignId) ?: return@locked ListImportSummary(0, 0, 0, 0)
         val existing = dao.contributionsFor(campaignId)
         val claimed = mutableSetOf<Long>()
         var added = 0
@@ -305,11 +350,41 @@ class HarambeeRepository(private val dao: HarambeeDao) {
             footer = list.footer.ifBlank { campaign.footer },
         )
         if (updated != campaign) dao.updateCampaign(updated)
+        log(campaignId, null, "List imported", "WhatsApp list: $added paid, $pledges pledges added, $linked matched")
         ListImportSummary(added, pledges, linked, skipped)
     }
 
-    suspend fun updateContribution(contribution: Contribution) = dao.updateContribution(contribution)
-    suspend fun deleteContribution(contribution: Contribution) = dao.deleteContribution(contribution)
+    suspend fun updateContribution(contribution: Contribution) = locked {
+        val old = dao.getContribution(contribution.id) ?: return@locked
+        dao.updateContribution(contribution)
+        val changes = buildList {
+            if (old.amountCents != contribution.amountCents) add("amount ${Money.format(old.amountCents)} → ${Money.format(contribution.amountCents)}")
+            if ((old.listName ?: old.senderName) != (contribution.listName ?: contribution.senderName)) {
+                add("name \"${old.listName ?: old.senderName}\" → \"${contribution.listName ?: contribution.senderName}\"")
+            }
+            if (old.status != contribution.status) add("${statusWord(old.status)} → ${statusWord(contribution.status)}")
+            if (old.campaignId != contribution.campaignId) add("moved to another Harambee")
+            if (old.collectorId != contribution.collectorId) add("received-by changed")
+            if (old.note != contribution.note) add("note edited")
+        }
+        if (changes.isNotEmpty()) {
+            log(contribution.campaignId, contribution.id, "Edited", describe(old) + ": " + changes.joinToString(", "))
+            if (old.campaignId != contribution.campaignId) log(old.campaignId, contribution.id, "Moved out", describe(old))
+        }
+    }
+
+    suspend fun deleteContribution(contribution: Contribution) = locked {
+        dao.deleteContribution(contribution)
+        log(contribution.campaignId, contribution.id, "Deleted", describe(contribution))
+    }
+
+    private fun statusWord(status: String) = when (status) {
+        Status.COUNTED -> "counted"
+        Status.PLEDGED -> "pledge"
+        Status.EXCLUDED -> "not counted"
+        Status.REVERSED -> "reversed"
+        else -> "waiting"
+    }
 
     suspend fun setAlias(key: String, displayName: String?) {
         if (displayName.isNullOrBlank()) dao.deleteAlias(key) else dao.upsertAlias(ContributorAlias(key, displayName.trim()))
@@ -319,13 +394,48 @@ class HarambeeRepository(private val dao: HarambeeDao) {
 
     fun collectors(campaignId: Long) = dao.observeCollectors(campaignId)
 
-    suspend fun addCollector(campaignId: Long, name: String, phone: String) =
+    suspend fun addCollector(campaignId: Long, name: String, phone: String) = locked {
         dao.insertCollector(Collector(campaignId = campaignId, name = name.trim(), phone = Phone.normalize(phone) ?: ""))
+        log(campaignId, null, "Collector added", name.trim())
+    }
 
-    suspend fun deleteCollector(collector: Collector) {
+    suspend fun deleteCollector(collector: Collector) = locked {
         dao.clearCollector(collector.id)
         dao.deleteCollector(collector)
+        log(collector.campaignId, null, "Collector removed", collector.name)
     }
+
+    // Backup
+
+    suspend fun snapshot(): BackupData = locked {
+        BackupData(
+            campaigns = dao.allCampaigns(),
+            contributions = dao.allContributions(),
+            aliases = dao.allAliases(),
+            collectors = dao.allCollectors(),
+            members = dao.allMembers(),
+            activity = dao.allActivity(),
+        )
+    }
+
+    /** Replaces everything with [data] in one transaction; if anything fails nothing changes. */
+    suspend fun restore(data: BackupData, reason: String = "Restored from backup") = locked {
+        dao.clearContributions()
+        dao.clearCollectors()
+        dao.clearCampaigns()
+        dao.clearAliases()
+        dao.clearMembers()
+        dao.clearActivity()
+        dao.insertCampaigns(data.campaigns)
+        dao.insertContributions(data.contributions)
+        dao.insertAliases(data.aliases)
+        dao.insertCollectors(data.collectors)
+        dao.insertMembers(data.members)
+        dao.insertActivities(data.activity)
+        log(null, null, reason.substringBefore(" "), "$reason: ${data.campaigns.size} Harambees, ${data.contributions.size} records")
+    }
+
+    suspend fun deleteEverything() = restore(BackupData(), "Deleted everything")
 
     // Members
 

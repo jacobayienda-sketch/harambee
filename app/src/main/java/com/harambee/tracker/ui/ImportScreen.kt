@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.harambee.tracker.BuildConfig
 import com.harambee.tracker.core.MpesaParser
 import com.harambee.tracker.core.WhatsAppListParser
 import com.harambee.tracker.data.ImportSummary
@@ -89,21 +90,24 @@ fun ImportScreen(initialCampaignId: Long?, initialText: String, onBack: () -> Un
                 }
             }
 
-            Text("1. Messages already on this phone", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Finds M-Pesa payments received since ${campaign?.let { Formats.date(it.startAt) } ?: "the start date"}. Anything already recorded is skipped. New ones go to Review so you can confirm each.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Button(
-                enabled = !busy && campaign != null,
-                onClick = {
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) scan()
-                    else permission.launch(Manifest.permission.READ_SMS)
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (busy) "Scanning…" else "Scan M-Pesa inbox") }
+            // The Play Store edition has no SMS access; pasting and sharing still work.
+            if (BuildConfig.SMS_CAPTURE) {
+                Text("1. Messages already on this phone", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Finds M-Pesa payments received since ${campaign?.let { Formats.date(it.startAt) } ?: "the start date"}. Anything already recorded is skipped. New ones go to Review so you can confirm each.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Button(
+                    enabled = !busy && campaign != null,
+                    onClick = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) scan()
+                        else permission.launch(Manifest.permission.READ_SMS)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(if (busy) "Scanning…" else "Scan M-Pesa inbox") }
+            }
 
-            Text("2. Paste M-Pesa messages or a WhatsApp list", style = MaterialTheme.typography.titleMedium)
+            Text(if (BuildConfig.SMS_CAPTURE) "2. Paste M-Pesa messages or a WhatsApp list" else "Paste M-Pesa messages or a WhatsApp list", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Paste forwarded M-Pesa confirmations (e.g. from the treasurer's phone), or the contribution list already going round the group — names with ✅ count as paid, names without are pledges.",
                 style = MaterialTheme.typography.bodySmall,

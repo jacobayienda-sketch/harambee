@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 6–11: Google Drive auto backup of the records, snapshots and settings. -->
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="file" path="backups/" />
+    <include domain="sharedpref" path="." />
+</full-backup-content>

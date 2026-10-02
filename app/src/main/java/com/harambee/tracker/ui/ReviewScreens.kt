@@ -1,5 +1,6 @@
 package com.harambee.tracker.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,9 +81,10 @@ fun ReviewListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onShareUpdate: 
     val pending by repository.pending.collectAsStateWithLifecycle(emptyList())
     val campaigns by repository.campaigns.collectAsStateWithLifecycle(emptyList())
     var bulkCampaign by remember { mutableStateOf<Long?>(null) }
+    val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(campaigns) { if (bulkCampaign == null) bulkCampaign = campaigns.firstOrNull { it.isActive }?.id }
 
-    Scaffold(topBar = { BackTopBar("Review payments", onBack) }) { padding ->
+    Scaffold(topBar = { BackTopBar("Review payments", onBack) }, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 32.dp)) {
             if (pending.isEmpty()) {
                 item { Text("All caught up. New M-Pesa payments will appear here.", Modifier.padding(16.dp)) }
@@ -104,18 +113,63 @@ fun ReviewListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onShareUpdate: 
                     }
                 }
             }
+            if (pending.isNotEmpty()) {
+                item {
+                    Text(
+                        "Swipe right to add ✅ · swipe left if it's not a contribution · tap for details",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp, 0.dp, 16.dp, 8.dp),
+                    )
+                }
+            }
             items(pending, key = { it.contribution.id }) { row ->
                 val k = row.contribution
-                Row(Modifier.fillMaxWidth().clickable { onOpen(k.id) }.padding(16.dp, 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(row.displayName, style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            listOfNotNull(Phone.pretty(k.senderPhone).ifBlank { null }, k.mpesaCode, Formats.dateTime(k.receivedAt)).joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                val target = k.campaignId ?: bulkCampaign
+                val state = rememberSwipeToDismissBoxState()
+                SwipeToDismissBox(
+                    state = state,
+                    enableDismissFromStartToEnd = target != null,
+                    backgroundContent = {
+                        val toAdd = state.dismissDirection == SwipeToDismissBoxValue.StartToEnd
+                        Box(
+                            Modifier.fillMaxSize().background(
+                                if (toAdd) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                            ).padding(horizontal = 24.dp),
+                            contentAlignment = if (toAdd) Alignment.CenterStart else Alignment.CenterEnd,
+                        ) { Text(if (toAdd) "Add ✅" else "Not a contribution", style = MaterialTheme.typography.titleSmall) }
+                    },
+                    onDismiss = { direction ->
+                        scope.launch {
+                            if (direction == SwipeToDismissBoxValue.StartToEnd && target != null) {
+                                repository.confirm(k.id, target)
+                                container.notifier.cancel(k.id)
+                                snackbar.showSnackbar("Added ✅ ${row.displayName} ${Money.format(k.amountCents)}")
+                            } else if (direction == SwipeToDismissBoxValue.EndToStart) {
+                                repository.reject(k.id)
+                                container.notifier.cancel(k.id)
+                                val result = snackbar.showSnackbar("Not counted: ${row.displayName}", actionLabel = "Undo", duration = SnackbarDuration.Short)
+                                if (result == SnackbarResult.ActionPerformed) repository.returnToReview(k.id)
+                            } else {
+                                state.reset()
+                            }
+                        }
+                    },
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).clickable { onOpen(k.id) }.padding(16.dp, 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(row.displayName, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                listOfNotNull(Phone.pretty(k.senderPhone).ifBlank { null }, k.mpesaCode, Formats.dateTime(k.receivedAt)).joinToString(" · "),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(Money.format(k.amountCents), style = MaterialTheme.typography.titleMedium)
                     }
-                    Text(Money.format(k.amountCents), style = MaterialTheme.typography.titleMedium)
                 }
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp))
             }

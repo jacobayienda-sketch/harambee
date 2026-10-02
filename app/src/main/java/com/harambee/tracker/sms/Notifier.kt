@@ -26,7 +26,6 @@ class Notifier(private val context: Context, private val settings: Settings) {
     private val manager = NotificationManagerCompat.from(context)
 
     fun createChannels() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val system = context.getSystemService(NotificationManager::class.java)
         system.createNotificationChannel(
             NotificationChannel(CHANNEL_PAYMENTS, "Incoming payments", NotificationManager.IMPORTANCE_HIGH).apply {
@@ -107,6 +106,23 @@ class Notifier(private val context: Context, private val settings: Settings) {
         notify(contribution.id, builder)
     }
 
+    /** Payments found by the catch-up scan. */
+    fun showCatchUp(count: Int) {
+        val intent = Intent(context, MainActivity::class.java)
+            .setAction(MainActivity.ACTION_REVIEW)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val builder = NotificationCompat.Builder(context, CHANNEL_PAYMENTS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(if (count == 1) "1 M-Pesa payment to review" else "$count M-Pesa payments to review")
+            .setContentText("Found while the app wasn't running")
+            .setContentIntent(PendingIntent.getActivity(context, CATCH_UP_ID, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .setAutoCancel(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+        manager.notify(CATCH_UP_ID, builder.build())
+    }
+
     fun cancel(contributionId: Long) = manager.cancel(notificationId(contributionId))
 
     private fun notify(contributionId: Long, builder: NotificationCompat.Builder) {
@@ -138,5 +154,6 @@ class Notifier(private val context: Context, private val settings: Settings) {
     companion object {
         const val CHANNEL_PAYMENTS = "payments"
         const val CHANNEL_UPDATES = "updates"
+        private const val CATCH_UP_ID = Int.MAX_VALUE - 1
     }
 }

@@ -18,13 +18,16 @@ interface HarambeeDao {
         SELECT c.*,
             COALESCE(SUM(CASE WHEN k.status = 'COUNTED' THEN k.amountCents END), 0) AS totalCents,
             COALESCE(SUM(CASE WHEN k.status = 'PLEDGED' THEN k.amountCents END), 0) AS pledgedCents,
-            COUNT(CASE WHEN k.status = 'COUNTED' THEN 1 END) AS paidCount
+            COUNT(CASE WHEN k.status = 'COUNTED' THEN 1 END) AS paidCount,
+            COALESCE(SUM(CASE WHEN k.status = 'COUNTED' AND k.receivedAt >= :todayStart AND k.source != 'WHATSAPP_LIST' THEN k.amountCents END), 0) AS todayCents,
+            COUNT(CASE WHEN k.status = 'COUNTED' AND k.receivedAt >= :todayStart AND k.source != 'WHATSAPP_LIST' THEN 1 END) AS todayCount,
+            MAX(CASE WHEN k.status = 'COUNTED' AND k.source != 'WHATSAPP_LIST' THEN k.receivedAt END) AS lastPaymentAt
         FROM campaigns c LEFT JOIN contributions k ON k.campaignId = c.id
         GROUP BY c.id
         ORDER BY c.isActive DESC, c.createdAt DESC
         """,
     )
-    fun observeCampaignSummaries(): Flow<List<CampaignSummary>>
+    fun observeCampaignSummaries(todayStart: Long): Flow<List<CampaignSummary>>
 
     @Query("SELECT * FROM campaigns WHERE id = :id")
     fun observeCampaign(id: Long): Flow<Campaign?>
@@ -153,4 +156,37 @@ interface HarambeeDao {
 
     @Delete
     suspend fun deleteMember(member: Member)
+
+    // Activity log
+
+    @Insert
+    suspend fun insertActivity(entry: ActivityEntry)
+
+    @Query("SELECT * FROM activity_log WHERE campaignId = :campaignId ORDER BY at DESC, id DESC")
+    fun observeActivity(campaignId: Long): Flow<List<ActivityEntry>>
+
+    @Query("SELECT * FROM activity_log ORDER BY at DESC, id DESC LIMIT 500")
+    fun observeAllActivity(): Flow<List<ActivityEntry>>
+
+    // Backup / restore
+
+    @Query("SELECT * FROM campaigns") suspend fun allCampaigns(): List<Campaign>
+    @Query("SELECT * FROM contributions") suspend fun allContributions(): List<Contribution>
+    @Query("SELECT * FROM contributor_aliases") suspend fun allAliases(): List<ContributorAlias>
+    @Query("SELECT * FROM collectors") suspend fun allCollectors(): List<Collector>
+    @Query("SELECT * FROM members") suspend fun allMembers(): List<Member>
+    @Query("SELECT * FROM activity_log") suspend fun allActivity(): List<ActivityEntry>
+
+    @Query("DELETE FROM contributions") suspend fun clearContributions()
+    @Query("DELETE FROM collectors") suspend fun clearCollectors()
+    @Query("DELETE FROM campaigns") suspend fun clearCampaigns()
+    @Query("DELETE FROM contributor_aliases") suspend fun clearAliases()
+    @Query("DELETE FROM members") suspend fun clearMembers()
+    @Query("DELETE FROM activity_log") suspend fun clearActivity()
+
+    @Insert suspend fun insertCampaigns(items: List<Campaign>)
+    @Insert suspend fun insertContributions(items: List<Contribution>)
+    @Insert suspend fun insertAliases(items: List<ContributorAlias>)
+    @Insert suspend fun insertCollectors(items: List<Collector>)
+    @Insert suspend fun insertActivities(items: List<ActivityEntry>)
 }

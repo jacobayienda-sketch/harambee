@@ -2,7 +2,14 @@ package com.harambee.tracker
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import android.app.KeyguardManager
+import android.os.Build
+import android.view.WindowManager
+import android.widget.Toast
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
@@ -31,17 +38,89 @@ import com.harambee.tracker.ui.MembersScreen
 import com.harambee.tracker.ui.PledgesScreen
 import com.harambee.tracker.ui.ReportScreen
 import com.harambee.tracker.ui.SettingsScreen
+import com.harambee.tracker.ui.ActivityScreen
+import com.harambee.tracker.ui.BackupScreen
+import com.harambee.tracker.ui.LockScreen
+import com.harambee.tracker.ui.OnboardingScreen
 
-class MainActivity : ComponentActivity() {
+/** FragmentActivity (a ComponentActivity) because the fingerprint / PIN prompt needs it. */
+class MainActivity : FragmentActivity() {
     /** A screen requested from outside: a notification tap or text shared into the app. */
     private var request by mutableStateOf<String?>(null)
     private var sharedText = ""
+    private var locked by mutableStateOf(false)
+    private var stoppedAt = 0L
+    private var prompting = false
+    private val settings get() = container.settings
+    private lateinit var biometricPrompt: BiometricPrompt
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        locked = settings.appLock.value.value
+        // Created once here, as BiometricPrompt requires, and reused for every unlock.
+        biometricPrompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this), object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                prompting = false
+                locked = false
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                prompting = false
+            }
+        })
         if (savedInstanceState == null) handle(intent)
-        setContent { HarambeeTheme { AppNavigation(request, sharedText) { request = null } } }
+        val start = if (settings.onboarded.value.value) "home" else "onboarding"
+        setContent {
+            HarambeeTheme {
+                if (locked) LockScreen(onUnlock = ::authenticate)
+                else AppNavigation(start, request, sharedText) { request = null }
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Lock again after a minute away.
+        if (settings.appLock.value.value && stoppedAt > 0 && System.currentTimeMillis() - stoppedAt > 60_000) locked = true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // With the app lock on, hide the screen in the recent-apps view and block screenshots.
+        if (settings.appLock.value.value) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (locked) authenticate()
+        container.catchUp()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        stoppedAt = System.currentTimeMillis()
+    }
+
+    private fun authenticate() {
+        if (prompting) return
+        if (!getSystemService(KeyguardManager::class.java).isDeviceSecure) {
+            // No screen lock on the phone, so there is nothing to check against.
+            locked = false
+            Toast.makeText(this, "Set a screen lock on your phone to use App lock", Toast.LENGTH_LONG).show()
+            return
+        }
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock Harambee Tracker")
+            .setSubtitle("Use your fingerprint, face, PIN or pattern")
+            .apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                } else {
+                    @Suppress("DEPRECATION")
+                    setDeviceCredentialAllowed(true)
+                }
+            }
+            .build()
+        prompting = true
+        biometricPrompt.authenticate(info)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -52,6 +131,7 @@ class MainActivity : ComponentActivity() {
     private fun handle(intent: Intent?) {
         intent ?: return
         when {
+            intent.action == ACTION_REVIEW -> request = "review"
             intent.hasExtra(EXTRA_REVIEW_ID) -> request = "review/${intent.getLongExtra(EXTRA_REVIEW_ID, 0)}"
             intent.hasExtra(EXTRA_SHARE_CAMPAIGN_ID) -> request = "update/${intent.getLongExtra(EXTRA_SHARE_CAMPAIGN_ID, 0)}"
             intent.action == Intent.ACTION_SEND && intent.type == "text/plain" -> {
@@ -64,11 +144,12 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_REVIEW_ID = "review_id"
         const val EXTRA_SHARE_CAMPAIGN_ID = "share_campaign_id"
+        const val ACTION_REVIEW = "com.harambee.tracker.REVIEW"
     }
 }
 
 @Composable
-private fun AppNavigation(request: String?, sharedText: String, onRequestHandled: () -> Unit) {
+private fun AppNavigation(start: String, request: String?, sharedText: String, onRequestHandled: () -> Unit) {
     val nav = rememberNavController()
     LaunchedEffect(request) {
         if (request != null) {
@@ -78,7 +159,17 @@ private fun AppNavigation(request: String?, sharedText: String, onRequestHandled
     }
     val longArg = { name: String -> navArgument(name) { type = NavType.LongType } }
 
-    NavHost(nav, startDestination = "home") {
+    NavHost(nav, startDestination = start) {
+        composable("onboarding") {
+            OnboardingScreen(onDone = { createFirst ->
+                nav.navigate("home") { popUpTo("onboarding") { inclusive = true } }
+                if (createFirst) nav.navigate("campaign-edit?id=-1")
+            })
+        }
+        composable("backup") { BackupScreen(onBack = { nav.popBackStack() }) }
+        composable("activity?campaignId={campaignId}", listOf(navArgument("campaignId") { type = NavType.LongType; defaultValue = -1L })) { entry ->
+            ActivityScreen(entry.arguments!!.getLong("campaignId").takeIf { it > 0 }, onBack = { nav.popBackStack() })
+        }
         composable("home") {
             HomeScreen(
                 onOpenCampaign = { nav.navigate("campaign/$it") },
@@ -87,6 +178,7 @@ private fun AppNavigation(request: String?, sharedText: String, onRequestHandled
                 onImport = { nav.navigate("import?campaignId=-1&shared=false") },
                 onMembers = { nav.navigate("members") },
                 onSettings = { nav.navigate("settings") },
+                onBackup = { nav.navigate("backup") },
             )
         }
         composable("campaign-edit?id={id}", listOf(navArgument("id") { type = NavType.LongType; defaultValue = -1L })) { entry ->
@@ -114,6 +206,7 @@ private fun AppNavigation(request: String?, sharedText: String, onRequestHandled
                 onPledges = { nav.navigate("pledges/$id") },
                 onCollectors = { nav.navigate("collectors/$id") },
                 onMembers = { nav.navigate("member-status/$id") },
+                onActivity = { nav.navigate("activity?campaignId=$id") },
             )
         }
         composable("report/{id}", listOf(longArg("id"))) { entry ->
@@ -135,7 +228,7 @@ private fun AppNavigation(request: String?, sharedText: String, onRequestHandled
             )
         }
         composable("members") { MembersScreen(onBack = { nav.popBackStack() }) }
-        composable("settings") { SettingsScreen(onBack = { nav.popBackStack() }) }
+        composable("settings") { SettingsScreen(onBack = { nav.popBackStack() }, onBackup = { nav.navigate("backup") }, onActivity = { nav.navigate("activity?campaignId=-1") }) }
         composable("add/{id}", listOf(longArg("id"))) { entry ->
             AddContributionScreen(entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
         }

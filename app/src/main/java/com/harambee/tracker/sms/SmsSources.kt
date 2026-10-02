@@ -17,9 +17,10 @@ object SmsSources {
 
     /**
      * Reads M-Pesa messages already in the phone's inbox since [since]. New payments go to the
-     * review list (suggested for [campaignId]); anything already recorded is skipped.
+     * review list (suggested for [campaignId], or the active Harambee at that time) unless
+     * [autoConfirm]; anything already recorded is skipped.
      */
-    suspend fun scanInbox(context: Context, since: Long, campaignId: Long?): ImportSummary = withContext(Dispatchers.IO) {
+    suspend fun scanInbox(context: Context, since: Long, campaignId: Long?, autoConfirm: Boolean = false): ImportSummary = withContext(Dispatchers.IO) {
         val repository = context.container.repository
         var summary = ImportSummary()
         val cursor = context.contentResolver.query(
@@ -36,7 +37,7 @@ object SmsSources {
             while (it.moveToNext()) {
                 if (!isMpesaSender(it.getString(address))) continue
                 val text = it.getString(body) ?: continue
-                summary += repository.ingestSms(text, it.getLong(date), autoConfirm = false, forcedCampaignId = campaignId)
+                summary += repository.ingestSms(text, it.getLong(date), autoConfirm = autoConfirm, forcedCampaignId = campaignId)
             }
         }
         summary

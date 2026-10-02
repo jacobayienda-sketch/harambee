@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,7 +43,10 @@ fun UpdateScreen(campaignId: Long, onBack: () -> Unit) {
     val campaign by repository.campaign(campaignId).collectAsStateWithLifecycle(null)
     val rows by repository.contributions(campaignId).collectAsStateWithLifecycle(emptyList())
     val collectors by repository.collectors(campaignId).collectAsStateWithLifecycle(emptyList())
-    var options by remember { mutableStateOf(UpdateOptions()) }
+    val settings = appContainer().settings
+    // Remembers the treasurer's choices for next time.
+    var options by remember { mutableStateOf(settings.updateOptions()) }
+    LaunchedEffect(options) { settings.saveUpdateOptions(options) }
 
     val c = campaign
     val lines = CampaignData.lines(rows)

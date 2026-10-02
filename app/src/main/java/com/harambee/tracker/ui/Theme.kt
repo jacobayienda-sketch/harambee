@@ -4,7 +4,15 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import android.os.Build
+import androidx.compose.material3.Typography
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.harambee.tracker.Settings
 import androidx.compose.ui.graphics.Color
 
 private val Green = Color(0xFF0B6E4F)
@@ -32,5 +40,20 @@ private val Dark = darkColorScheme(
 
 @Composable
 fun HarambeeTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, content = content)
+    val settings = appContainer().settings
+    val mode by settings.themeMode.value.collectAsStateWithLifecycle()
+    val dynamic by settings.dynamicColor.value.collectAsStateWithLifecycle()
+    val dark = when (mode) {
+        Settings.THEME_LIGHT -> false
+        Settings.THEME_DARK -> true
+        else -> isSystemInDarkTheme()
+    }
+    val context = LocalContext.current
+    val scheme = when {
+        // Android 12+: colours taken from the wallpaper, if the user wants them.
+        dynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        dark -> Dark
+        else -> Light
+    }
+    MaterialTheme(colorScheme = scheme, typography = Typography(), content = content)
 }

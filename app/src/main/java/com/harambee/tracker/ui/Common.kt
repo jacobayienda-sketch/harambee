@@ -44,6 +44,8 @@ object Formats {
 
     fun dateTime(ms: Long): String = dateTime.format(Instant.ofEpochMilli(ms))
     fun date(ms: Long): String = date.format(Instant.ofEpochMilli(ms))
+    private val time = DateTimeFormatter.ofPattern("h:mm a", Locale.US).withZone(MpesaParser.NAIROBI)
+    fun time(ms: Long): String = time.format(Instant.ofEpochMilli(ms))
     fun startOfToday(): Long = LocalDate.now(MpesaParser.NAIROBI).atStartOfDay(MpesaParser.NAIROBI).toInstant().toEpochMilli()
 }
 
@@ -127,13 +129,15 @@ object Sharing {
         context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$p")).putExtra("sms_body", text))
     }
 
-    fun sharePdf(context: Context, file: File) {
+    fun sharePdf(context: Context, file: File) = shareFile(context, file, "application/pdf", "Share PDF")
+
+    fun shareFile(context: Context, file: File, mime: String, title: String) {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
         val intent = Intent(Intent.ACTION_SEND)
-            .setType("application/pdf")
+            .setType(mime)
             .putExtra(Intent.EXTRA_STREAM, uri)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        context.startActivity(Intent.createChooser(intent, "Share PDF"))
+        context.startActivity(Intent.createChooser(intent, title))
     }
 
     private fun isInstalled(context: Context, pkg: String): Boolean = try {

@@ -48,7 +48,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.harambee.tracker.Settings
 import com.harambee.tracker.core.ClosingReport
 import com.harambee.tracker.core.MemberMatcher
 import com.harambee.tracker.core.MemberRef
@@ -421,44 +420,6 @@ fun MembersScreen(onBack: () -> Unit) {
                 }
                 HorizontalDivider()
             }
-        }
-    }
-}
-
-@Composable
-fun SettingsScreen(onBack: () -> Unit) {
-    val settings = appContainer().settings
-    val ask by settings.askBeforeAdding.collectAsStateWithLifecycle()
-    Scaffold(topBar = { BackTopBar("Settings", onBack) }) { padding ->
-        Column(
-            Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Ask before adding", style = MaterialTheme.typography.titleSmall)
-                    Text("Pop up each M-Pesa payment so you choose Add ✅ or Not a contribution.", style = MaterialTheme.typography.bodySmall)
-                }
-                Switch(ask, { settings.setAskBeforeAdding(it) })
-            }
-            Text("Message wording", style = MaterialTheme.typography.titleMedium)
-            Text("{name}, {amount}, {harambee} and {payto} are filled in for you.", style = MaterialTheme.typography.bodySmall)
-            TemplateField("Thank-you message", settings.thankYouTemplate)
-            TemplateField("Pledge reminder", settings.pledgeReminderTemplate)
-            TemplateField("Member reminder", settings.memberReminderTemplate)
-        }
-    }
-}
-
-@Composable
-private fun TemplateField(label: String, setting: Settings.TextSetting) {
-    val value by setting.value.collectAsStateWithLifecycle()
-    var text by remember(value) { mutableStateOf(value) }
-    Column {
-        OutlinedTextField(text, { text = it }, label = { Text(label) }, minLines = 3, modifier = Modifier.fillMaxWidth())
-        Row {
-            TextButton(enabled = text != value, onClick = { setting.set(text) }) { Text("Save") }
-            TextButton(enabled = value != setting.default, onClick = { setting.set(setting.default) }) { Text("Reset") }
         }
     }
 }

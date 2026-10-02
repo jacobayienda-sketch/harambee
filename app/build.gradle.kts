@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -13,8 +14,22 @@ android {
         applicationId = "com.harambee.tracker"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.3.0"
+    }
+
+    // "full": reads M-Pesa SMS automatically (install the APK directly).
+    // "play": no SMS permissions, for the Google Play Store; payments come in by paste / share / typing.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("full") {
+            dimension = "distribution"
+            buildConfigField("boolean", "SMS_CAPTURE", "true")
+        }
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("boolean", "SMS_CAPTURE", "false")
+        }
     }
 
     buildTypes {
@@ -31,6 +46,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -42,6 +58,8 @@ kotlin {
 
 ksp {
     arg("room.generateKotlin", "true")
+    // Keeps a history of database versions (app/schemas) so upgrades can be checked.
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -58,6 +76,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
     implementation("androidx.navigation:navigation-compose:2.9.6")
+
+    implementation("androidx.fragment:fragment-ktx:1.9.1")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 
     implementation("androidx.room:room-runtime:2.8.3")
     implementation("androidx.room:room-ktx:2.8.3")
