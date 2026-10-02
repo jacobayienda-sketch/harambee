@@ -1,5 +1,6 @@
 package com.harambee.tracker.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +41,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.harambee.tracker.core.Money
+import com.harambee.tracker.core.NameDisplay
 import com.harambee.tracker.core.MpesaParser
 import com.harambee.tracker.data.Campaign
 import kotlinx.coroutines.launch
@@ -60,6 +63,8 @@ fun CampaignEditScreen(campaignId: Long?, onDone: (Long) -> Unit, onBack: () -> 
     var startAt by remember { mutableLongStateOf(Formats.startOfToday()) }
     var active by remember { mutableStateOf(true) }
     var memberGroup by remember { mutableStateOf("") }
+    var nameDisplay by remember { mutableStateOf(NameDisplay.FULL) }
+    var showAmounts by remember { mutableStateOf(true) }
     var expected by remember { mutableStateOf("") }
     val groups by repository.groups.collectAsStateWithLifecycle(emptyList())
     var groupMenu by remember { mutableStateOf(false) }
@@ -79,6 +84,8 @@ fun CampaignEditScreen(campaignId: Long?, onDone: (Long) -> Unit, onBack: () -> 
                 startAt = c.startAt
                 active = c.isActive
                 memberGroup = c.memberGroup ?: ""
+                nameDisplay = c.nameDisplay
+                showAmounts = c.showAmounts
                 expected = c.expectedCents?.let { Money.format(it) } ?: ""
             }
         }
@@ -126,6 +133,19 @@ fun CampaignEditScreen(campaignId: Long?, onDone: (Long) -> Unit, onBack: () -> 
                 }
                 Switch(active, { active = it })
             }
+            Text("Privacy in shared lists", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "How contributors appear in WhatsApp updates, the report and the public page. You always see full names in the app. Phone numbers are never shared.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                NameDisplay.all.forEach { (value, label) -> FilterChip(nameDisplay == value, { nameDisplay = value }, label = { Text(label) }) }
+            }
+            Text("e.g. " + NameDisplay.apply("Jane Wanjiku", nameDisplay), style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Show each person's amount", Modifier.weight(1f))
+                Switch(showAmounts, { showAmounts = it })
+            }
             Text("Members group (optional)", style = MaterialTheme.typography.titleSmall)
             Text("For welfare / church groups: see who has and hasn't contributed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Box {
@@ -160,6 +180,8 @@ fun CampaignEditScreen(campaignId: Long?, onDone: (Long) -> Unit, onBack: () -> 
                                     payToName = payToName.trim(), payToNumber = payToNumber.trim(),
                                     footer = footer.trim(), startAt = startAt, isActive = active,
                                     memberGroup = memberGroup.ifBlank { null },
+                                    nameDisplay = nameDisplay,
+                                    showAmounts = showAmounts,
                                     expectedCents = if (memberGroup.isBlank()) null else Money.parseToCents(expected),
                                 ),
                             )

@@ -57,6 +57,34 @@ You can turn on or off: the totals and target, pledges, the blank next number, a
 - **Export** to CSV for a spreadsheet.
 - Works offline. Nothing leaves the phone.
 
+## Update formats
+
+On the update screen, pick the kind of post:
+
+| Format | What the group sees |
+|---|---|
+| **Full list** | The whole numbered list with ✅, totals, target and balance (or the latest 20, or totals only) |
+| **New since last update** | Only people counted since the last list you shared, keeping their numbers from the full list |
+| **One contribution** | "✅ Received with thanks: Jane W. — KES 1,000", plus the new total |
+| **Milestone** | "Halfway there! 🎉" at 25 / 50 / 75 / 100% of the target. When a payment crosses one, the notification offers it automatically |
+| **Final report** | Totals, breakdowns and the full list, as WhatsApp text or a PDF |
+
+## Admin tools
+
+- **Dashboard:** total, balance, contributors, average gift, unpaid pledges, payments waiting for review, money received per day (a chart, or a table), breakdowns by method and by collector, top contributors and recent activity.
+- **Contributors:** one entry per person with totals. Search, sort, rename on all their entries, mark anonymous, merge duplicates ("Same person as…"), send a thank-you or a pledge reminder.
+- **Corrections:** changing an amount, moving an entry or removing it from the total needs a reason. The activity history records old → new values and the reason.
+- **Duplicate protection:** an M-Pesa code is never counted twice. Typed entries warn when the same person and amount were recorded in the last 3 days. Review warns about a possible double payment (same person, same amount, within 2 hours).
+- **Exports:** transactions (CSV), contributors (CSV), report (PDF/text), campaign page (HTML).
+
+## Privacy and the public page
+
+- **Per Harambee:** choose how names appear in anything shared: full name, first name + initial ("Jane W."), initials ("J.W.") or no names. You can also hide individual amounts; the totals still show.
+- **Per person:** "Anonymous" shows them as *Well-wisher*.
+- **Phone numbers** are never included in anything shared.
+- **The app itself** always shows full details to the treasurer.
+- **Public page:** a progress card image (for WhatsApp Status and groups) and a one-file campaign page that opens in any browser and works in light and dark mode. Upload the page to Google Drive or a website host to give it a link.
+
 ## Your records are safe
 
 - **Deleting SMS doesn't matter.** Each payment, including the full original M-Pesa message, is stored in the app's own database the moment it arrives. Clearing the inbox afterwards changes nothing.

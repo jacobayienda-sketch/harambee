@@ -29,6 +29,12 @@ data class Campaign(
     val memberGroup: String? = null,
     /** Amount each member is expected to give, e.g. 1,000 per bereavement. */
     val expectedCents: Long? = null,
+    /** How contributor names appear in anything shared (see [com.harambee.tracker.core.NameDisplay]). */
+    @ColumnInfo(defaultValue = "FULL") val nameDisplay: String = "FULL",
+    /** Show each person's amount in shared lists (totals are always shown). */
+    @ColumnInfo(defaultValue = "1") val showAmounts: Boolean = true,
+    /** When an update was last shared; "new since last update" counts from here. */
+    val lastSharedAt: Long? = null,
 )
 
 /** Another committee member whose number also receives contributions. */
@@ -116,6 +122,10 @@ data class Contribution(
     val createdAt: Long = System.currentTimeMillis(),
     /** Who received the money; null = this phone's number. */
     val collectorId: Long? = null,
+    /** The contributor asked not to be named in shared lists. */
+    @ColumnInfo(defaultValue = "0") val anonymous: Boolean = false,
+    /** When it was counted (✅); used for "new since last update". */
+    val countedAt: Long? = null,
 )
 
 /** A preferred display name for everyone who pays from the same number. */

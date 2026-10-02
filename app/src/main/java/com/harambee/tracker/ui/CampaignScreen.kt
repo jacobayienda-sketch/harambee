@@ -78,6 +78,9 @@ fun CampaignScreen(
     onCollectors: () -> Unit,
     onMembers: () -> Unit,
     onActivity: () -> Unit,
+    onDashboard: () -> Unit,
+    onPeople: () -> Unit,
+    onPublicPage: () -> Unit,
 ) {
     val repository = appContainer().repository
     val context = LocalContext.current
@@ -88,6 +91,8 @@ fun CampaignScreen(
     var query by remember { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var exporting by remember { mutableStateOf(false) }
+    val collectors by repository.collectors(campaignId).collectAsStateWithLifecycle(emptyList())
 
     val c = campaign ?: run {
         Scaffold(topBar = { BackTopBar("", onBack) }) { Spacer(Modifier.padding(it)) }
@@ -108,21 +113,17 @@ fun CampaignScreen(
                 IconButton(onClick = onShareUpdate) { Icon(Icons.Default.Share, "Share update") }
                 IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "More") }
                 DropdownMenu(menuOpen, { menuOpen = false }) {
-                    DropdownMenuItem(text = { Text("Edit Harambee") }, onClick = { menuOpen = false; onEdit() })
+                    DropdownMenuItem(text = { Text("Dashboard") }, onClick = { menuOpen = false; onDashboard() })
+                    DropdownMenuItem(text = { Text("Contributors") }, onClick = { menuOpen = false; onPeople() })
+                    DropdownMenuItem(text = { Text("Edit Harambee & privacy") }, onClick = { menuOpen = false; onEdit() })
+                    DropdownMenuItem(text = { Text("Public page & progress card") }, onClick = { menuOpen = false; onPublicPage() })
                     DropdownMenuItem(text = { Text("Closing report") }, onClick = { menuOpen = false; onReport() })
                     DropdownMenuItem(text = { Text("Pledge reminders") }, onClick = { menuOpen = false; onPledges() })
                     DropdownMenuItem(text = { Text("Collectors (other numbers)") }, onClick = { menuOpen = false; onCollectors() })
                     DropdownMenuItem(text = { Text("Members: who hasn't contributed") }, onClick = { menuOpen = false; onMembers() })
                     DropdownMenuItem(text = { Text("Activity history") }, onClick = { menuOpen = false; onActivity() })
                     DropdownMenuItem(text = { Text("Import messages or a list") }, onClick = { menuOpen = false; onImport() })
-                    DropdownMenuItem(text = { Text("Export to spreadsheet (CSV)") }, onClick = {
-                        menuOpen = false
-                        val csv = CsvExport.build(rows.map { r ->
-                            CsvRow(r.displayName, r.contribution.senderPhone, r.contribution.amountCents, r.contribution.status,
-                                Source.label(r.contribution.source), r.contribution.mpesaCode, r.contribution.receivedAt, r.contribution.note)
-                        })
-                        Sharing.shareCsv(context, c.name.replace(Regex("[^A-Za-z0-9]+"), "_") + ".csv", csv)
-                    })
+                    DropdownMenuItem(text = { Text("Export…") }, onClick = { menuOpen = false; exporting = true })
                     DropdownMenuItem(text = { Text("Delete Harambee") }, onClick = { menuOpen = false; confirmDelete = true })
                 }
             }
@@ -131,7 +132,7 @@ fun CampaignScreen(
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 32.dp)) {
             item {
                 Card(
-                    Modifier.fillMaxWidth().padding(16.dp),
+                    Modifier.fillMaxWidth().padding(16.dp).clickable(onClick = onDashboard),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                 ) {
                     Column(Modifier.padding(16.dp)) {
@@ -208,6 +209,8 @@ fun CampaignScreen(
             }
         }
     }
+
+    if (exporting) ExportDialog(c, rows, collectors, onReport = onReport, onDismiss = { exporting = false })
 
     if (confirmDelete) {
         AlertDialog(

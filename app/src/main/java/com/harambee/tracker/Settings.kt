@@ -70,6 +70,8 @@ class Settings(context: Context) {
     private val showDate = BoolSetting("update_date", false)
     private val sortByAmount = BoolSetting("update_sort_amount", false)
     private val listLimit = LongSetting("update_list_limit", -1)
+    /** The update format used last time (full list, new since last update, …). */
+    val updateFormat = TextSetting("update_format", "FULL")
 
     fun updateOptions() = UpdateOptions(
         showTotal = showTotal.value.value,

@@ -39,6 +39,9 @@ import com.harambee.tracker.ui.PledgesScreen
 import com.harambee.tracker.ui.ReportScreen
 import com.harambee.tracker.ui.SettingsScreen
 import com.harambee.tracker.ui.ActivityScreen
+import com.harambee.tracker.ui.DashboardScreen
+import com.harambee.tracker.ui.PeopleScreen
+import com.harambee.tracker.ui.PublicPageScreen
 import com.harambee.tracker.ui.BackupScreen
 import com.harambee.tracker.ui.LockScreen
 import com.harambee.tracker.ui.OnboardingScreen
@@ -133,7 +136,8 @@ class MainActivity : FragmentActivity() {
         when {
             intent.action == ACTION_REVIEW -> request = "review"
             intent.hasExtra(EXTRA_REVIEW_ID) -> request = "review/${intent.getLongExtra(EXTRA_REVIEW_ID, 0)}"
-            intent.hasExtra(EXTRA_SHARE_CAMPAIGN_ID) -> request = "update/${intent.getLongExtra(EXTRA_SHARE_CAMPAIGN_ID, 0)}"
+            intent.hasExtra(EXTRA_SHARE_CAMPAIGN_ID) ->
+                request = "update/${intent.getLongExtra(EXTRA_SHARE_CAMPAIGN_ID, 0)}?format=${intent.getStringExtra(EXTRA_FORMAT).orEmpty()}&contributionId=-1"
             intent.action == Intent.ACTION_SEND && intent.type == "text/plain" -> {
                 sharedText = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
                 request = "import?campaignId=-1&shared=true"
@@ -145,6 +149,7 @@ class MainActivity : FragmentActivity() {
         const val EXTRA_REVIEW_ID = "review_id"
         const val EXTRA_SHARE_CAMPAIGN_ID = "share_campaign_id"
         const val ACTION_REVIEW = "com.harambee.tracker.REVIEW"
+        const val EXTRA_FORMAT = "update_format"
     }
 }
 
@@ -207,6 +212,9 @@ private fun AppNavigation(start: String, request: String?, sharedText: String, o
                 onCollectors = { nav.navigate("collectors/$id") },
                 onMembers = { nav.navigate("member-status/$id") },
                 onActivity = { nav.navigate("activity?campaignId=$id") },
+                onDashboard = { nav.navigate("dashboard/$id") },
+                onPeople = { nav.navigate("people/$id") },
+                onPublicPage = { nav.navigate("public/$id") },
             )
         }
         composable("report/{id}", listOf(longArg("id"))) { entry ->
@@ -233,10 +241,44 @@ private fun AppNavigation(start: String, request: String?, sharedText: String, o
             AddContributionScreen(entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
         }
         composable("contribution/{id}", listOf(longArg("id"))) { entry ->
-            ContributionScreen(entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
+            ContributionScreen(
+                entry.arguments!!.getLong("id"),
+                onBack = { nav.popBackStack() },
+                onShareSingle = { campaignId, contributionId -> nav.navigate("update/$campaignId?format=SINGLE&contributionId=$contributionId") },
+            )
         }
-        composable("update/{id}", listOf(longArg("id"))) { entry ->
-            UpdateScreen(entry.arguments!!.getLong("id"), onBack = { if (!nav.popBackStack()) nav.navigate("home") })
+        composable(
+            "update/{id}?format={format}&contributionId={contributionId}",
+            listOf(
+                longArg("id"),
+                navArgument("format") { type = NavType.StringType; defaultValue = "" },
+                navArgument("contributionId") { type = NavType.LongType; defaultValue = -1L },
+            ),
+        ) { entry ->
+            val id = entry.arguments!!.getLong("id")
+            UpdateScreen(
+                campaignId = id,
+                initialFormat = entry.arguments!!.getString("format")?.ifBlank { null },
+                contributionId = entry.arguments!!.getLong("contributionId").takeIf { it > 0 },
+                onBack = { if (!nav.popBackStack()) nav.navigate("home") },
+                onReport = { nav.navigate("report/$id") },
+            )
+        }
+        composable("dashboard/{id}", listOf(longArg("id"))) { entry ->
+            val id = entry.arguments!!.getLong("id")
+            DashboardScreen(
+                id,
+                onBack = { nav.popBackStack() },
+                onPeople = { nav.navigate("people/$id") },
+                onActivity = { nav.navigate("activity?campaignId=$id") },
+                onReview = { nav.navigate("review") },
+            )
+        }
+        composable("people/{id}", listOf(longArg("id"))) { entry ->
+            PeopleScreen(entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() }, onOpenContribution = { nav.navigate("contribution/$it") })
+        }
+        composable("public/{id}", listOf(longArg("id"))) { entry ->
+            PublicPageScreen(entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
         }
         composable("review") {
             ReviewListScreen(
@@ -250,7 +292,9 @@ private fun AppNavigation(start: String, request: String?, sharedText: String, o
                 contributionId = entry.arguments!!.getLong("id"),
                 onBack = { nav.popBackStack() },
                 // After adding, go straight to the WhatsApp update for that Harambee.
-                onAdded = { campaignId -> nav.navigate("update/$campaignId") { popUpTo("review/{id}") { inclusive = true } } },
+                onAdded = { campaignId, format ->
+                    nav.navigate("update/$campaignId?format=${format.orEmpty()}&contributionId=-1") { popUpTo("review/{id}") { inclusive = true } }
+                },
                 onNewCampaign = { nav.navigate("campaign-edit?id=-1") },
             )
         }

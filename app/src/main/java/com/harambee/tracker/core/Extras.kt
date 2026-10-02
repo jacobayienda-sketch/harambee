@@ -97,7 +97,7 @@ data class ReportData(
 object ClosingReport {
     private val date = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.US).withZone(MpesaParser.NAIROBI)
 
-    fun build(d: ReportData, combineRepeat: Boolean = true): String = buildString {
+    fun build(d: ReportData, combineRepeat: Boolean = true, showAmounts: Boolean = true): String = buildString {
         val paid = WhatsAppUpdateBuilder.arrange(d.lines.filter { it.paid }, combineRepeat, sortByAmount = false)
         val pledges = d.lines.filter { !it.paid }
         val total = paid.sumOf { it.amountCents }
@@ -128,7 +128,11 @@ object ClosingReport {
             append("Members contributed: ").append(d.membersPaid).append(" of ").append(d.membersTotal).append("\n")
         }
         append("\n     *Contributors*\n")
-        paid.forEachIndexed { i, l -> append(i + 1).append(". ").append(l.name).append(" ").append(Money.format(l.amountCents)).append(" ✅\n") }
+        paid.forEachIndexed { i, l ->
+            append(i + 1).append(". ").append(l.name)
+            if (showAmounts) append(" ").append(Money.format(l.amountCents))
+            append(" ✅\n")
+        }
         if (d.footer.isNotBlank()) append("\n").append(d.footer.trim())
     }.trimEnd()
 }

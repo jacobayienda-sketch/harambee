@@ -65,7 +65,15 @@ object WhatsAppListParser {
 }
 
 /** One contribution as it appears in an update. [key] identifies the person (phone or name). */
-data class UpdateLine(val key: String, val name: String, val amountCents: Long, val paid: Boolean, val time: Long)
+data class UpdateLine(
+    val key: String,
+    val name: String,
+    val amountCents: Long,
+    val paid: Boolean,
+    val time: Long,
+    /** Counted since the last shared update. */
+    val isNew: Boolean = false,
+)
 
 /** A number people can send money to. */
 data class PayTo(val name: String, val number: String) {
@@ -83,6 +91,8 @@ data class UpdateOptions(
     val combineRepeat: Boolean = true,
     /** null = whole list; 0 = totals only; n = only the latest n names (for very long lists). */
     val listLimit: Int? = null,
+    /** Privacy: list names without amounts (totals are still shown). */
+    val showAmounts: Boolean = true,
 )
 
 data class UpdateContent(
@@ -103,7 +113,7 @@ object WhatsAppUpdateBuilder {
             .values
             .map { group ->
                 val first = group.minBy { it.time }
-                first.copy(amountCents = group.sumOf { it.amountCents })
+                first.copy(amountCents = group.sumOf { it.amountCents }, isNew = group.any { it.isNew })
             }
         return if (sortByAmount) merged.sortedWith(compareByDescending<UpdateLine> { it.amountCents }.thenBy { it.time })
         else merged.sortedBy { it.time }
@@ -135,7 +145,8 @@ object WhatsAppUpdateBuilder {
             if (hidden > 0) sb.append("_…").append(hidden).append(" earlier names not shown_\n")
             ordered.forEachIndexed { i, l ->
                 if (i < hidden) return@forEachIndexed
-                sb.append(i + 1).append(". ").append(l.name).append(" ").append(Money.format(l.amountCents))
+                sb.append(i + 1).append(". ").append(l.name)
+                if (options.showAmounts) sb.append(" ").append(Money.format(l.amountCents))
                 if (l.paid) sb.append(" ✅")
                 sb.append("\n")
             }

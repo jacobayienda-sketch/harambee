@@ -21,6 +21,7 @@ import com.harambee.tracker.core.Money
 import com.harambee.tracker.data.ConfirmResult
 import com.harambee.tracker.data.Contribution
 import com.harambee.tracker.data.ReviewInfo
+import com.harambee.tracker.ui.Formats
 
 class Notifier(private val context: Context, private val settings: Settings) {
     private val manager = NotificationManagerCompat.from(context)
@@ -44,6 +45,7 @@ class Notifier(private val context: Context, private val settings: Settings) {
         val amount = Money.formatKes(contribution.amountCents)
         val campaign = info.suggestedCampaign
         val details = buildList {
+            info.possibleDoubleSend?.let { add("⚠️ Same amount ${Formats.time(it.receivedAt)} — possible double payment") }
             when {
                 info.listMatch != null -> add("Matches \"${info.listMatch.listName ?: info.listMatch.senderName}\" on the list — will tick ✅")
                 info.earlier.isNotEmpty() -> add("Already gave ${Money.formatKes(info.earlier.sumOf { it.amountCents })} to this Harambee")
@@ -71,9 +73,12 @@ class Notifier(private val context: Context, private val settings: Settings) {
     /** After adding: the new total, one tap away from the WhatsApp share sheet. */
     fun showConfirmed(result: ConfirmResult) {
         val c = result.contribution
-        val title = "✅ ${c.listName ?: c.senderName} ${Money.format(c.amountCents)} — ${result.campaign.name}"
-        val text = "Total ${Money.formatKes(result.totalCents)} · Tap to share the update on WhatsApp"
-        val share = openApp(c.id, MainActivity.EXTRA_SHARE_CAMPAIGN_ID, result.campaign.id)
+        val milestone = result.milestone
+        val title = if (milestone != null) "🎉 ${result.campaign.name}: ${milestone}% of the target!"
+        else "✅ ${c.listName ?: c.senderName} ${Money.format(c.amountCents)} — ${result.campaign.name}"
+        val text = if (milestone != null) "${c.listName ?: c.senderName} ${Money.format(c.amountCents)} took the total to ${Money.formatKes(result.totalCents)} · Tap to share the milestone"
+        else "Total ${Money.formatKes(result.totalCents)} · Tap to share the update on WhatsApp"
+        val share = openApp(c.id, MainActivity.EXTRA_SHARE_CAMPAIGN_ID, result.campaign.id, if (milestone != null) "MILESTONE" else null)
         val builder = NotificationCompat.Builder(context, CHANNEL_UPDATES)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -134,10 +139,11 @@ class Notifier(private val context: Context, private val settings: Settings) {
 
     private fun notificationId(contributionId: Long) = (contributionId % Int.MAX_VALUE).toInt()
 
-    private fun openApp(contributionId: Long, extra: String, value: Long): PendingIntent {
+    private fun openApp(contributionId: Long, extra: String, value: Long, format: String? = null): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)
-            .setAction("$extra:$value")
+            .setAction("$extra:$value:${format.orEmpty()}")
             .putExtra(extra, value)
+            .apply { if (format != null) putExtra(MainActivity.EXTRA_FORMAT, format) }
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         return PendingIntent.getActivity(context, notificationId(contributionId), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }

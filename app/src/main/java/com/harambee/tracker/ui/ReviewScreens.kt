@@ -179,7 +179,7 @@ fun ReviewListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onShareUpdate: 
 
 /** One payment: is it a contribution, and to which Harambee? */
 @Composable
-fun ReviewScreen(contributionId: Long, onBack: () -> Unit, onAdded: (Long) -> Unit, onNewCampaign: () -> Unit) {
+fun ReviewScreen(contributionId: Long, onBack: () -> Unit, onAdded: (campaignId: Long, format: String?) -> Unit, onNewCampaign: () -> Unit) {
     val container = appContainer()
     val repository = container.repository
     val scope = rememberCoroutineScope()
@@ -233,7 +233,7 @@ fun ReviewScreen(contributionId: Long, onBack: () -> Unit, onAdded: (Long) -> Un
                     style = MaterialTheme.typography.titleMedium,
                 )
                 k.campaignId?.takeIf { k.status == Status.COUNTED }?.let { id ->
-                    Button(onClick = { onAdded(id) }, modifier = Modifier.fillMaxWidth()) { Text("Share WhatsApp update") }
+                    Button(onClick = { onAdded(id, null) }, modifier = Modifier.fillMaxWidth()) { Text("Share WhatsApp update") }
                 }
                 return@Column
             }
@@ -247,6 +247,19 @@ fun ReviewScreen(contributionId: Long, onBack: () -> Unit, onAdded: (Long) -> Un
             Text("Add to", style = MaterialTheme.typography.titleSmall)
             CampaignPicker(campaigns, selected, { selected = it })
 
+            info?.possibleDoubleSend?.let { d ->
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("⚠️ Possible double payment", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "${k.senderName} already sent KES ${Money.format(d.amountCents)} at ${Formats.dateTime(d.receivedAt)}" +
+                                (d.mpesaCode?.let { " ($it)" } ?: "") + ". This is a different M-Pesa transaction, so it's real money — " +
+                                "check with them whether it was meant as a second contribution.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
             info?.let { i ->
                 val (title, body) = when {
                     i.listMatch != null -> "On the list ✅" to "Matches \"${i.listMatch.listName ?: i.listMatch.senderName}\" (${Money.format(i.listMatch.amountCents)}${if (i.listMatch.status == Status.PLEDGED) ", pledged" else ""}). Adding will tick that line instead of adding a new one."
@@ -277,9 +290,10 @@ fun ReviewScreen(contributionId: Long, onBack: () -> Unit, onAdded: (Long) -> Un
                     val target = selected ?: return@Button
                     scope.launch {
                         val name = listName?.trim()?.takeIf { it.isNotEmpty() && it != k.senderName }
-                        repository.confirm(k.id, target, name)
+                        val result = repository.confirm(k.id, target, name)
                         container.notifier.cancel(k.id)
-                        onAdded(target)
+                        // Crossing 25/50/75/100% opens the milestone message instead of the list.
+                        onAdded(target, if (result?.milestone != null) "MILESTONE" else null)
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),

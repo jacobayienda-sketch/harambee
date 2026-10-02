@@ -8,6 +8,7 @@ import com.harambee.tracker.core.ParsedList
 import com.harambee.tracker.core.Phone
 import kotlinx.coroutines.sync.Mutex
 import androidx.room.withTransaction
+import com.harambee.tracker.core.Milestones
 import com.harambee.tracker.core.Money
 import kotlinx.coroutines.sync.withLock
 
@@ -25,6 +26,8 @@ data class ConfirmResult(
     /** True when the payment ticked an existing pledge / WhatsApp list line instead of adding a line. */
     val tickedListEntry: Boolean,
     val totalCents: Long,
+    /** 25 / 50 / 75 / 100 when this payment carried the total past that share of the target. */
+    val milestone: Int? = null,
 )
 
 data class ImportSummary(
@@ -65,6 +68,8 @@ data class ReviewInfo(
     val earlier: List<Contribution>,
     /** The pledge / list line this payment would tick, if any. */
     val listMatch: Contribution?,
+    /** Same person, same amount within two hours: maybe sent twice by mistake. */
+    val possibleDoubleSend: Contribution? = null,
 )
 
 class HarambeeRepository(private val db: HarambeeDatabase) {
@@ -182,7 +187,10 @@ class HarambeeRepository(private val db: HarambeeDatabase) {
             c.status == Status.COUNTED &&
                 (c.contributorKey == contribution.contributorKey || Names.matches(c.listName ?: c.senderName, contribution.senderName))
         }
-        return ReviewInfo(campaign, earlier, findListEntry(others, contribution.senderName, contribution.amountCents))
+        val double = earlier.firstOrNull {
+            it.amountCents == contribution.amountCents && kotlin.math.abs(it.receivedAt - contribution.receivedAt) < 2 * 3600_000L
+        }
+        return ReviewInfo(campaign, earlier, findListEntry(others, contribution.senderName, contribution.amountCents), double)
     }
 
     /** "Add ✅": counts a pending payment in [campaignId], ticking a matching pledge when there is one. */
@@ -194,6 +202,8 @@ class HarambeeRepository(private val db: HarambeeDatabase) {
     }
 
     private suspend fun confirmLocked(contribution: Contribution, campaign: Campaign, listName: String?): ConfirmResult {
+        val before = dao.totalFor(campaign.id)
+        val now = System.currentTimeMillis()
         val others = dao.contributionsFor(campaign.id).filter { it.id != contribution.id }
         val match = findListEntry(others, contribution.senderName, contribution.amountCents)
         val result = if (match != null) {
@@ -210,6 +220,7 @@ class HarambeeRepository(private val db: HarambeeDatabase) {
                 source = contribution.source,
                 rawMessage = contribution.rawMessage,
                 collectorId = contribution.collectorId,
+                countedAt = now,
             )
             dao.updateContribution(ticked)
             ticked to true
@@ -218,12 +229,14 @@ class HarambeeRepository(private val db: HarambeeDatabase) {
                 campaignId = campaign.id,
                 status = Status.COUNTED,
                 listName = listName?.takeIf { it.isNotBlank() } ?: contribution.listName,
+                countedAt = now,
             )
             dao.updateContribution(counted)
             counted to false
         }
         log(campaign.id, result.first.id, if (result.second) "Ticked ✅" else "Added ✅", describe(result.first))
-        return ConfirmResult(result.first, campaign, result.second, dao.totalFor(campaign.id))
+        val after = dao.totalFor(campaign.id)
+        return ConfirmResult(result.first, campaign, result.second, after, Milestones.crossed(before, after, campaign.targetCents))
     }
 
     /** "Not a contribution": kept (so the code stays blocked) but never counted. */
@@ -289,6 +302,7 @@ class HarambeeRepository(private val db: HarambeeDatabase) {
             status = if (pledged) Status.PLEDGED else Status.COUNTED,
             note = note.trim(),
             collectorId = collectorId,
+            countedAt = if (pledged) null else System.currentTimeMillis(),
         )
         val id = dao.insertContribution(contribution)
         if (id == -1L) return@locked AddResult.DuplicateCode
@@ -320,6 +334,7 @@ class HarambeeRepository(private val db: HarambeeDatabase) {
                 val upgraded = sameLine.copy(
                     listName = sameLine.listName ?: entry.name,
                     status = if (entry.paid && sameLine.status == Status.PLEDGED) Status.COUNTED else sameLine.status,
+                    countedAt = sameLine.countedAt ?: if (entry.paid) System.currentTimeMillis() else null,
                 )
                 if (upgraded != sameLine) {
                     dao.updateContribution(upgraded)
@@ -340,6 +355,7 @@ class HarambeeRepository(private val db: HarambeeDatabase) {
                     receivedAt = campaign.startAt + index,
                     source = Source.WHATSAPP_LIST,
                     status = if (entry.paid) Status.COUNTED else Status.PLEDGED,
+                    countedAt = if (entry.paid) System.currentTimeMillis() else null,
                 ),
             )
             if (entry.paid) added++ else pledges++
@@ -354,8 +370,10 @@ class HarambeeRepository(private val db: HarambeeDatabase) {
         ListImportSummary(added, pledges, linked, skipped)
     }
 
-    suspend fun updateContribution(contribution: Contribution) = locked {
-        val old = dao.getContribution(contribution.id) ?: return@locked
+    /** Saves a correction; [reason] is kept in the activity history. */
+    suspend fun updateContribution(edited: Contribution, reason: String = "") = locked {
+        val old = dao.getContribution(edited.id) ?: return@locked
+        val contribution = if (edited.status == Status.COUNTED && edited.countedAt == null) edited.copy(countedAt = System.currentTimeMillis()) else edited
         dao.updateContribution(contribution)
         val changes = buildList {
             if (old.amountCents != contribution.amountCents) add("amount ${Money.format(old.amountCents)} → ${Money.format(contribution.amountCents)}")
@@ -366,16 +384,52 @@ class HarambeeRepository(private val db: HarambeeDatabase) {
             if (old.campaignId != contribution.campaignId) add("moved to another Harambee")
             if (old.collectorId != contribution.collectorId) add("received-by changed")
             if (old.note != contribution.note) add("note edited")
+            if (old.anonymous != contribution.anonymous) add(if (contribution.anonymous) "made anonymous" else "name shown again")
         }
         if (changes.isNotEmpty()) {
-            log(contribution.campaignId, contribution.id, "Edited", describe(old) + ": " + changes.joinToString(", "))
+            val why = reason.trim().takeIf { it.isNotEmpty() }?.let { " — Reason: $it" } ?: ""
+            log(contribution.campaignId, contribution.id, "Corrected", describe(old) + ": " + changes.joinToString(", ") + why)
             if (old.campaignId != contribution.campaignId) log(old.campaignId, contribution.id, "Moved out", describe(old))
         }
     }
 
-    suspend fun deleteContribution(contribution: Contribution) = locked {
+    suspend fun deleteContribution(contribution: Contribution, reason: String = "") = locked {
         dao.deleteContribution(contribution)
-        log(contribution.campaignId, contribution.id, "Deleted", describe(contribution))
+        log(contribution.campaignId, contribution.id, "Deleted", describe(contribution) + (reason.trim().takeIf { it.isNotEmpty() }?.let { " — Reason: $it" } ?: ""))
+    }
+
+    /** Typed entries that look like one already recorded (same person and amount within 3 days). */
+    suspend fun possibleDuplicates(campaignId: Long, name: String, amountCents: Long, at: Long): List<Contribution> =
+        dao.contributionsFor(campaignId).filter { c ->
+            c.amountCents == amountCents &&
+                c.status in setOf(Status.COUNTED, Status.PLEDGED, Status.PENDING) &&
+                kotlin.math.abs(c.receivedAt - at) < 3 * 24 * 3600_000L &&
+                (Names.normalized(c.listName ?: c.senderName) == Names.normalized(name) ||
+                    Names.matches(name, c.senderName) || Names.matches(c.listName ?: c.senderName, name))
+        }
+
+    /** Remembers that an update went out, so the next "new since last update" starts here. */
+    suspend fun markShared(campaignId: Long) = locked {
+        dao.getCampaign(campaignId)?.let { dao.updateCampaign(it.copy(lastSharedAt = System.currentTimeMillis())) }
+    }
+
+    // People (contributors)
+
+    /** One name for every entry from this person in this Harambee. */
+    suspend fun renamePerson(campaignId: Long, key: String, name: String) = locked {
+        dao.setListNameForPerson(campaignId, key, name.trim())
+        log(campaignId, null, "Renamed", "Contributor now shown as \"${name.trim()}\"")
+    }
+
+    suspend fun setAnonymous(campaignId: Long, key: String, anonymous: Boolean, displayName: String) = locked {
+        dao.setAnonymousForPerson(campaignId, key, anonymous)
+        log(campaignId, null, if (anonymous) "Made anonymous" else "Name shown", displayName)
+    }
+
+    /** Joins two entries that are the same person (e.g. one from M-Pesa, one typed by hand). */
+    suspend fun mergePeople(campaignId: Long, fromKey: String, intoKey: String, fromName: String, intoName: String) = locked {
+        dao.mergePerson(campaignId, fromKey, intoKey, intoName)
+        log(campaignId, null, "Merged", "\"$fromName\" merged into \"$intoName\"")
     }
 
     private fun statusWord(status: String) = when (status) {

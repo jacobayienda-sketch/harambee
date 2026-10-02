@@ -117,7 +117,7 @@ fun ReportScreen(campaignId: Long, onBack: () -> Unit) {
             name = c.name,
             firstPayment = counted.filter { it.contribution.source != Source.WHATSAPP_LIST }.minOfOrNull { it.contribution.receivedAt },
             lastPayment = counted.filter { it.contribution.source != Source.WHATSAPP_LIST }.maxOfOrNull { it.contribution.receivedAt },
-            lines = CampaignData.lines(rows),
+            lines = CampaignData.lines(rows, c),
             byMethod = counted.groupBy { Source.label(it.contribution.source).substringBefore(" (") }
                 .map { (k, v) -> k to v.sumOf { it.contribution.amountCents } }.sortedByDescending { it.second },
             byCollector = counted.groupBy { CampaignData.collectorLabel(c, collectors, it.contribution.collectorId) }
@@ -128,6 +128,7 @@ fun ReportScreen(campaignId: Long, onBack: () -> Unit) {
             footer = c.footer,
         ),
         combine,
+        showAmounts = c.showAmounts,
     )
 
     Scaffold(topBar = { BackTopBar("Closing report", onBack) }) { padding ->

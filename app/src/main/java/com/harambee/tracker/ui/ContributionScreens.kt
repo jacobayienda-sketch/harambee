@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.harambee.tracker.core.Money
 import com.harambee.tracker.core.Phone
 import com.harambee.tracker.core.Templates
+import com.harambee.tracker.data.Contribution
 import com.harambee.tracker.data.HarambeeRepository
 import com.harambee.tracker.data.Source
 import com.harambee.tracker.data.Status
@@ -48,6 +50,8 @@ import kotlinx.coroutines.launch
 fun AddContributionScreen(campaignId: Long, onBack: () -> Unit) {
     val repository = appContainer().repository
     val scope = rememberCoroutineScope()
+    var duplicates by remember { mutableStateOf<List<Contribution>>(emptyList()) }
+    var saving by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
@@ -59,6 +63,37 @@ fun AddContributionScreen(campaignId: Long, onBack: () -> Unit) {
     var collectorId by remember { mutableStateOf<Long?>(null) }
     val campaign by repository.campaign(campaignId).collectAsStateWithLifecycle(null)
     val collectors by repository.collectors(campaignId).collectAsStateWithLifecycle(emptyList())
+
+    fun save() {
+        val cents = Money.parseToCents(amount)
+        when {
+            name.isBlank() -> error = "Enter a name"
+            cents == null || cents <= 0 -> error = "Enter an amount"
+            else -> scope.launch {
+                val now = System.currentTimeMillis()
+                // Typed entries have no M-Pesa code to check, so look for the same person and amount.
+                if (!saving) {
+                    val similar = repository.possibleDuplicates(campaignId, name, cents, now)
+                    if (similar.isNotEmpty()) {
+                        duplicates = similar
+                        return@launch
+                    }
+                }
+                saving = false
+                val result = repository.addManual(
+                    campaignId = campaignId, name = name, phone = phone.ifBlank { null }, amountCents = cents,
+                    source = if (pledge) Source.OTHER else source,
+                    mpesaCode = code.takeIf { !pledge && source == Source.MPESA_MANUAL },
+                    receivedAt = System.currentTimeMillis(), note = note, pledged = pledge,
+                    collectorId = collectorId.takeIf { !pledge },
+                )
+                when (result) {
+                    is HarambeeRepository.AddResult.Added -> onBack()
+                    HarambeeRepository.AddResult.DuplicateCode -> error = "M-Pesa code ${code.uppercase()} is already recorded"
+                }
+            }
+        }
+    }
 
     Scaffold(topBar = { BackTopBar(if (pledge) "Add pledge" else "Add contribution", onBack) }) { padding ->
         Column(
@@ -102,36 +137,42 @@ fun AddContributionScreen(campaignId: Long, onBack: () -> Unit) {
                 )
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Button(
-                onClick = {
-                    val cents = Money.parseToCents(amount)
-                    when {
-                        name.isBlank() -> error = "Enter a name"
-                        cents == null || cents <= 0 -> error = "Enter an amount"
-                        else -> scope.launch {
-                            val result = repository.addManual(
-                                campaignId = campaignId, name = name, phone = phone.ifBlank { null }, amountCents = cents,
-                                source = if (pledge) Source.OTHER else source,
-                                mpesaCode = code.takeIf { !pledge && source == Source.MPESA_MANUAL },
-                                receivedAt = System.currentTimeMillis(), note = note, pledged = pledge,
-                                collectorId = collectorId.takeIf { !pledge },
-                            )
-                            when (result) {
-                                is HarambeeRepository.AddResult.Added -> onBack()
-                                HarambeeRepository.AddResult.DuplicateCode -> error = "M-Pesa code ${code.uppercase()} is already recorded"
-                            }
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Save") }
+            Button(onClick = ::save, modifier = Modifier.fillMaxWidth()) { Text("Save") }
         }
+    }
+
+    if (duplicates.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { duplicates = emptyList() },
+            title = { Text("Possible duplicate") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("This looks like an entry already recorded:")
+                    duplicates.forEach { d ->
+                        Text(
+                            "• ${d.listName ?: d.senderName} · KES ${Money.format(d.amountCents)} · ${Source.label(d.source)} · ${Formats.dateTime(d.receivedAt)}" +
+                                if (d.status == Status.PLEDGED) " (pledge)" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Text("Add it only if it's really a second contribution.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    duplicates = emptyList()
+                    saving = true
+                    save()
+                }) { Text("Add anyway") }
+            },
+            dismissButton = { TextButton(onClick = { duplicates = emptyList() }) { Text("Cancel") } },
+        )
     }
 }
 
 /** Details of one line: rename, exclude, move, or delete. */
 @Composable
-fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
+fun ContributionScreen(contributionId: Long, onBack: () -> Unit, onShareSingle: (campaignId: Long, contributionId: Long) -> Unit) {
     val container = appContainer()
     val repository = container.repository
     val context = LocalContext.current
@@ -149,6 +190,9 @@ fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
     var campaignId by remember { mutableStateOf<Long?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     var initialised by remember { mutableStateOf(false) }
+    var anonymous by remember { mutableStateOf(false) }
+    var reason by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
 
     val r = row
     LaunchedEffect(r) {
@@ -158,6 +202,7 @@ fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
             note = r.contribution.note
             campaignId = r.contribution.campaignId
             collectorId = r.contribution.collectorId
+            anonymous = r.contribution.anonymous
             initialised = true
         }
     }
@@ -199,23 +244,43 @@ fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
                 )
             }
             OutlinedTextField(note, { note = it }, label = { Text("Note") }, modifier = Modifier.fillMaxWidth())
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Anonymous")
+                    Text("Shown as \"Well-wisher\" in anything shared", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(anonymous, { anonymous = it })
+            }
             CollectorPicker(campaigns.firstOrNull { it.id == k.campaignId }, collectors, collectorId) { collectorId = it }
             if (campaigns.size > 1) {
                 Text("Harambee", style = MaterialTheme.typography.titleSmall)
                 CampaignPicker(campaigns, campaignId, { campaignId = it })
             }
+            OutlinedTextField(
+                reason, { reason = it; error = null },
+                label = { Text("Reason for change") },
+                supportingText = { Text("Kept in the activity history. Needed when changing an amount, moving or removing a counted entry.") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Button(
                 onClick = {
+                    val cents = if (fromMpesa) k.amountCents else Money.parseToCents(amount) ?: k.amountCents
+                    val significant = k.status == Status.COUNTED && (cents != k.amountCents || (campaignId ?: k.campaignId) != k.campaignId)
+                    if (significant && reason.isBlank()) {
+                        error = "Give a reason for this correction"
+                        return@Button
+                    }
                     scope.launch {
-                        val cents = if (fromMpesa) k.amountCents else Money.parseToCents(amount) ?: k.amountCents
                         val listName = name.trim().takeIf { it.isNotEmpty() && it != k.senderName }
                         if (applyToAll) repository.setAlias(k.contributorKey, listName)
                         repository.updateContribution(
                             k.copy(
                                 listName = if (applyToAll) null else listName,
                                 amountCents = cents, note = note.trim(), campaignId = campaignId ?: k.campaignId,
-                                collectorId = collectorId,
+                                collectorId = collectorId, anonymous = anonymous,
                             ),
+                            reason,
                         )
                         onBack()
                     }
@@ -231,18 +296,27 @@ fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Send thank-you message") }
+                k.campaignId?.let { cid ->
+                    OutlinedButton(onClick = { onShareSingle(cid, k.id) }, modifier = Modifier.fillMaxWidth()) { Text("Share this contribution to the group") }
+                }
             }
             when (k.status) {
                 Status.COUNTED -> OutlinedButton(
-                    onClick = { scope.launch { repository.updateContribution(k.copy(status = Status.EXCLUDED)); onBack() } },
+                    onClick = {
+                        if (reason.isBlank()) {
+                            error = "Give a reason before removing it from the total"
+                        } else {
+                            scope.launch { repository.updateContribution(k.copy(status = Status.EXCLUDED), reason); onBack() }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Not a contribution — remove from total") }
                 Status.PLEDGED -> OutlinedButton(
-                    onClick = { scope.launch { repository.updateContribution(k.copy(status = Status.COUNTED)); onBack() } },
+                    onClick = { scope.launch { repository.updateContribution(k.copy(status = Status.COUNTED), reason); onBack() } },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Mark as paid ✅ (cash / other)") }
                 Status.EXCLUDED -> OutlinedButton(
-                    onClick = { scope.launch { repository.updateContribution(k.copy(status = Status.COUNTED)); onBack() } },
+                    onClick = { scope.launch { repository.updateContribution(k.copy(status = Status.COUNTED), reason); onBack() } },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Count it again") }
                 else -> Unit
@@ -266,7 +340,8 @@ fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
             AlertDialog(
                 onDismissRequest = { confirmDelete = false },
                 title = { Text("Delete this entry?") },
-                confirmButton = { TextButton(onClick = { scope.launch { repository.deleteContribution(k); onBack() } }) { Text("Delete") } },
+                text = { Text(if (reason.isBlank()) "Tip: write a reason first; it's kept in the activity history." else "Reason: $reason") },
+                confirmButton = { TextButton(onClick = { scope.launch { repository.deleteContribution(k, reason); onBack() } }) { Text("Delete") } },
                 dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
             )
         }

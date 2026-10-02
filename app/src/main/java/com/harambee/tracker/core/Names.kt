@@ -9,6 +9,9 @@ object Names {
             word.lowercase().replaceFirstChar { it.uppercase() }
         }
 
+    /** Titles kept in front of shortened names: "CO", "Mr", "Pastor"… */
+    fun isTitle(word: String): Boolean = word.lowercase().trimEnd('.') in honorifics
+
     fun tokens(name: String): List<String> =
         name.lowercase()
             .split(Regex("[^\\p{L}0-9]+"))

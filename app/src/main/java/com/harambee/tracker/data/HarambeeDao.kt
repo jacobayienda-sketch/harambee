@@ -123,6 +123,17 @@ interface HarambeeDao {
     @Query("DELETE FROM contributor_aliases WHERE contributorKey = :key")
     suspend fun deleteAlias(key: String)
 
+    // People
+
+    @Query("UPDATE contributions SET listName = :name WHERE campaignId = :campaignId AND contributorKey = :key")
+    suspend fun setListNameForPerson(campaignId: Long, key: String, name: String)
+
+    @Query("UPDATE contributions SET anonymous = :anonymous WHERE campaignId = :campaignId AND contributorKey = :key")
+    suspend fun setAnonymousForPerson(campaignId: Long, key: String, anonymous: Boolean)
+
+    @Query("UPDATE contributions SET contributorKey = :intoKey, listName = :intoName WHERE campaignId = :campaignId AND contributorKey = :fromKey")
+    suspend fun mergePerson(campaignId: Long, fromKey: String, intoKey: String, intoName: String)
+
     // Collectors
 
     @Query("SELECT * FROM collectors WHERE campaignId = :campaignId ORDER BY id")
