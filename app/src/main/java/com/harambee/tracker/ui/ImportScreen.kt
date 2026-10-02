@@ -47,6 +47,9 @@ fun ImportScreen(initialCampaignId: Long?, initialText: String, onBack: () -> Un
     var text by remember { mutableStateOf(initialText) }
     var result by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var collectorId by remember { mutableStateOf<Long?>(null) }
+    val collectorsFlow = remember(campaignId) { campaignId?.let { repository.collectors(it) } ?: kotlinx.coroutines.flow.flowOf(emptyList()) }
+    val collectors by collectorsFlow.collectAsStateWithLifecycle(emptyList())
     LaunchedEffect(campaigns) { if (campaignId == null) campaignId = campaigns.firstOrNull { it.isActive }?.id ?: campaigns.firstOrNull()?.id }
 
     val campaign = campaigns.firstOrNull { it.id == campaignId }
@@ -116,6 +119,7 @@ fun ImportScreen(initialCampaignId: Long?, initialText: String, onBack: () -> Un
             }
             detected?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             if (messages.isNotEmpty()) {
+                CollectorPicker(campaign, collectors, collectorId) { collectorId = it }
                 Text(
                     "Pasted messages can't be verified as genuine Safaricom messages. Check the codes against the M-Pesa statement if unsure.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
@@ -130,7 +134,7 @@ fun ImportScreen(initialCampaignId: Long?, initialText: String, onBack: () -> Un
                         result = if (messages.isNotEmpty()) {
                             var summary = ImportSummary()
                             val now = System.currentTimeMillis()
-                            messages.forEach { summary += repository.ingestSms(it, now, autoConfirm = true, forcedCampaignId = c.id) }
+                            messages.forEach { summary += repository.ingestSms(it, now, autoConfirm = true, forcedCampaignId = c.id, collectorId = collectorId) }
                             "Pasted messages: ${summary.describe()}"
                         } else {
                             val s = repository.importWhatsAppList(c.id, list!!)

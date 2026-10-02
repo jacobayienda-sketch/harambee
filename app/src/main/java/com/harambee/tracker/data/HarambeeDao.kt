@@ -119,4 +119,38 @@ interface HarambeeDao {
 
     @Query("DELETE FROM contributor_aliases WHERE contributorKey = :key")
     suspend fun deleteAlias(key: String)
+
+    // Collectors
+
+    @Query("SELECT * FROM collectors WHERE campaignId = :campaignId ORDER BY id")
+    fun observeCollectors(campaignId: Long): Flow<List<Collector>>
+
+    @Insert
+    suspend fun insertCollector(collector: Collector): Long
+
+    @Delete
+    suspend fun deleteCollector(collector: Collector)
+
+    @Query("UPDATE contributions SET collectorId = NULL WHERE collectorId = :collectorId")
+    suspend fun clearCollector(collectorId: Long)
+
+    // Members
+
+    @Query("SELECT DISTINCT groupName FROM members ORDER BY groupName")
+    fun observeGroups(): Flow<List<String>>
+
+    @Query("SELECT * FROM members WHERE groupName = :group ORDER BY name COLLATE NOCASE")
+    fun observeMembers(group: String): Flow<List<Member>>
+
+    @Query("SELECT * FROM members WHERE groupName = :group")
+    suspend fun membersOf(group: String): List<Member>
+
+    @Insert
+    suspend fun insertMembers(members: List<Member>)
+
+    @Update
+    suspend fun updateMember(member: Member)
+
+    @Delete
+    suspend fun deleteMember(member: Member)
 }

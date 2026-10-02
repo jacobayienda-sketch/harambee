@@ -2,6 +2,7 @@ package com.harambee.tracker
 
 import android.app.Application
 import android.content.Context
+import com.harambee.tracker.core.Templates
 import com.harambee.tracker.data.HarambeeDatabase
 import com.harambee.tracker.data.HarambeeRepository
 import com.harambee.tracker.data.IngestResult
@@ -37,6 +38,21 @@ class Settings(context: Context) {
         _askBeforeAdding.value = value
     }
 
+    val thankYouTemplate = TextSetting("thank_you_template", Templates.THANK_YOU)
+    val pledgeReminderTemplate = TextSetting("pledge_reminder_template", Templates.PLEDGE_REMINDER)
+    val memberReminderTemplate = TextSetting("member_reminder_template", Templates.MEMBER_REMINDER)
+
+    inner class TextSetting(private val key: String, val default: String) {
+        private val state = MutableStateFlow(prefs.getString(key, null) ?: default)
+        val value: StateFlow<String> = state
+
+        fun set(text: String) {
+            val v = text.ifBlank { default }
+            prefs.edit().putString(key, v).apply()
+            state.value = v
+        }
+    }
+
     private companion object {
         const val KEY_ASK = "ask_before_adding"
     }
@@ -45,7 +61,7 @@ class Settings(context: Context) {
 class AppContainer(context: Context) {
     val repository = HarambeeRepository(HarambeeDatabase.create(context).dao())
     val settings = Settings(context)
-    val notifier = Notifier(context)
+    val notifier = Notifier(context, settings)
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Called for every M-Pesa SMS that arrives while the app is installed. */

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -31,11 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.harambee.tracker.core.UpdateContent
-import com.harambee.tracker.core.UpdateLine
 import com.harambee.tracker.core.UpdateOptions
 import com.harambee.tracker.core.WhatsAppUpdateBuilder
-import com.harambee.tracker.data.Status
 
 @Composable
 fun UpdateScreen(campaignId: Long, onBack: () -> Unit) {
@@ -43,17 +41,12 @@ fun UpdateScreen(campaignId: Long, onBack: () -> Unit) {
     val context = LocalContext.current
     val campaign by repository.campaign(campaignId).collectAsStateWithLifecycle(null)
     val rows by repository.contributions(campaignId).collectAsStateWithLifecycle(emptyList())
+    val collectors by repository.collectors(campaignId).collectAsStateWithLifecycle(emptyList())
     var options by remember { mutableStateOf(UpdateOptions()) }
 
     val c = campaign
-    val text = if (c == null) "" else WhatsAppUpdateBuilder.build(
-        UpdateContent(c.intro, c.payToName, c.payToNumber, c.footer, c.targetCents),
-        rows.filter { it.contribution.status == Status.COUNTED || it.contribution.status == Status.PLEDGED }.map {
-            UpdateLine(it.displayName, it.contribution.amountCents, it.contribution.status == Status.COUNTED, it.contribution.receivedAt)
-        },
-        options,
-        System.currentTimeMillis(),
-    )
+    val lines = CampaignData.lines(rows)
+    val text = if (c == null) "" else WhatsAppUpdateBuilder.build(CampaignData.content(c, collectors), lines, options, System.currentTimeMillis())
 
     Scaffold(topBar = { BackTopBar("WhatsApp update", onBack) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -65,10 +58,26 @@ fun UpdateScreen(campaignId: Long, onBack: () -> Unit) {
                 }
                 OutlinedButton(onClick = { Sharing.copy(context, text) }) { Text("Copy") }
             }
+            if (options.listLimit != null && c != null) {
+                OutlinedButton(
+                    onClick = {
+                        val full = WhatsAppUpdateBuilder.build(CampaignData.content(c, collectors), lines, options.copy(listLimit = null, addNextNumber = false), System.currentTimeMillis())
+                        Sharing.sharePdf(context, ReportPdf.create(context, fileName(c.name, "list"), c.name, full))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Share full list as PDF") }
+            }
             Card(Modifier.fillMaxWidth()) {
                 SelectionContainer { Text(text, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium) }
             }
+            Text("List length", style = MaterialTheme.typography.titleSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(null to "Whole list", 20 to "Latest 20", 0 to "Totals only").forEach { (limit, label) ->
+                    FilterChip(options.listLimit == limit, { options = options.copy(listLimit = limit) }, label = { Text(label) })
+                }
+            }
             Text("Options", style = MaterialTheme.typography.titleSmall)
+            Option("One line per person (combine repeat payments)", options.combineRepeat) { options = options.copy(combineRepeat = it) }
             Option("Show total and balance", options.showTotal) { options = options.copy(showTotal = it) }
             Option("Show target", options.showTarget) { options = options.copy(showTarget = it) }
             Option("Include pledges (no ✅)", options.showPledges) { options = options.copy(showPledges = it) }
@@ -91,3 +100,5 @@ private fun Option(label: String, checked: Boolean, onChange: (Boolean) -> Unit)
         Text(label)
     }
 }
+
+fun fileName(campaign: String, suffix: String) = campaign.replace(Regex("[^A-Za-z0-9]+"), "_").trim('_') + "_" + suffix + ".pdf"

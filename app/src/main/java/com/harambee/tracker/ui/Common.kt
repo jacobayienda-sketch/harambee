@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -27,6 +28,7 @@ import androidx.core.content.FileProvider
 import com.harambee.tracker.AppContainer
 import com.harambee.tracker.container
 import com.harambee.tracker.core.MpesaParser
+import com.harambee.tracker.core.Phone
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
@@ -99,6 +101,39 @@ object Sharing {
             .putExtra(Intent.EXTRA_STREAM, uri)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         context.startActivity(Intent.createChooser(intent, "Export contributions"))
+    }
+
+    /**
+     * Opens a chat with one person with [text] typed in: WhatsApp if installed, otherwise SMS.
+     * M-Pesa often hides part of the number ("0723***873"); then the share sheet lets you pick the contact.
+     */
+    fun messagePerson(context: Context, phone: String?, text: String) {
+        val p = Phone.normalize(phone)
+        if (p == null || Phone.isMasked(p) || p.length != 10) {
+            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Send to…"))
+            return
+        }
+        val international = "254" + p.substring(1)
+        val installed = whatsAppPackages.firstOrNull { isInstalled(context, it) }
+        if (installed != null) {
+            val uri = Uri.parse("https://wa.me/$international?text=" + Uri.encode(text))
+            try {
+                context.startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage(installed))
+                return
+            } catch (_: Exception) {
+                // Fall back to SMS.
+            }
+        }
+        context.startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$p")).putExtra("sms_body", text))
+    }
+
+    fun sharePdf(context: Context, file: File) {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        val intent = Intent(Intent.ACTION_SEND)
+            .setType("application/pdf")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        context.startActivity(Intent.createChooser(intent, "Share PDF"))
     }
 
     private fun isInstalled(context: Context, pkg: String): Boolean = try {

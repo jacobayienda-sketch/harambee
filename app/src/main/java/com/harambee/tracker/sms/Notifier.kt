@@ -7,18 +7,22 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.harambee.tracker.MainActivity
 import com.harambee.tracker.R
+import com.harambee.tracker.Settings
+import com.harambee.tracker.core.Phone
+import com.harambee.tracker.core.Templates
 import com.harambee.tracker.core.Money
 import com.harambee.tracker.data.ConfirmResult
 import com.harambee.tracker.data.Contribution
 import com.harambee.tracker.data.ReviewInfo
 
-class Notifier(private val context: Context) {
+class Notifier(private val context: Context, private val settings: Settings) {
     private val manager = NotificationManagerCompat.from(context)
 
     fun createChannels() {
@@ -79,6 +83,17 @@ class Notifier(private val context: Context) {
             .setContentIntent(share)
             .addAction(0, "Share to WhatsApp", share)
             .setAutoCancel(true)
+        val phone = Phone.normalize(c.senderPhone)
+        if (phone != null && !Phone.isMasked(phone) && phone.length == 10) {
+            // wa.me opens the chat in WhatsApp with the thank-you typed in.
+            val message = Templates.fill(settings.thankYouTemplate.value.value, c.listName ?: c.senderName, c.amountCents, result.campaign.name, "")
+            val uri = Uri.parse("https://wa.me/254${phone.substring(1)}?text=" + Uri.encode(message))
+            val thanks = PendingIntent.getActivity(
+                context, notificationId(c.id) * 2 + 1, Intent(Intent.ACTION_VIEW, uri),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            builder.addAction(0, "Say thanks", thanks)
+        }
         notify(c.id, builder)
     }
 

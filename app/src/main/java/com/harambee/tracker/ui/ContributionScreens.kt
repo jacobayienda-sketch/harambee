@@ -30,14 +30,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.harambee.tracker.core.Money
 import com.harambee.tracker.core.Phone
+import com.harambee.tracker.core.Templates
 import com.harambee.tracker.data.HarambeeRepository
 import com.harambee.tracker.data.Source
 import com.harambee.tracker.data.Status
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 /** Add a cash/bank payment, an M-Pesa payment made to someone else's phone, or a pledge. */
@@ -53,6 +56,9 @@ fun AddContributionScreen(campaignId: Long, onBack: () -> Unit) {
     var note by remember { mutableStateOf("") }
     var pledge by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var collectorId by remember { mutableStateOf<Long?>(null) }
+    val campaign by repository.campaign(campaignId).collectAsStateWithLifecycle(null)
+    val collectors by repository.collectors(campaignId).collectAsStateWithLifecycle(emptyList())
 
     Scaffold(topBar = { BackTopBar(if (pledge) "Add pledge" else "Add contribution", onBack) }) { padding ->
         Column(
@@ -83,6 +89,7 @@ fun AddContributionScreen(campaignId: Long, onBack: () -> Unit) {
                     )
                 }
             }
+            if (!pledge) CollectorPicker(campaign, collectors, collectorId) { collectorId = it }
             OutlinedTextField(
                 phone, { phone = it }, label = { Text("Phone (optional)") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth(),
@@ -107,6 +114,7 @@ fun AddContributionScreen(campaignId: Long, onBack: () -> Unit) {
                                 source = if (pledge) Source.OTHER else source,
                                 mpesaCode = code.takeIf { !pledge && source == Source.MPESA_MANUAL },
                                 receivedAt = System.currentTimeMillis(), note = note, pledged = pledge,
+                                collectorId = collectorId.takeIf { !pledge },
                             )
                             when (result) {
                                 is HarambeeRepository.AddResult.Added -> onBack()
@@ -124,10 +132,16 @@ fun AddContributionScreen(campaignId: Long, onBack: () -> Unit) {
 /** Details of one line: rename, exclude, move, or delete. */
 @Composable
 fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
-    val repository = appContainer().repository
+    val container = appContainer()
+    val repository = container.repository
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val row by repository.contribution(contributionId).collectAsStateWithLifecycle(null)
     val campaigns by repository.campaigns.collectAsStateWithLifecycle(emptyList())
+    val thankYou by container.settings.thankYouTemplate.value.collectAsStateWithLifecycle()
+    var collectorId by remember { mutableStateOf<Long?>(null) }
+    val collectorsFlow = remember(row?.contribution?.campaignId) { row?.contribution?.campaignId?.let { repository.collectors(it) } ?: flowOf(emptyList()) }
+    val collectors by collectorsFlow.collectAsStateWithLifecycle(emptyList())
     var name by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
@@ -143,6 +157,7 @@ fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
             amount = Money.format(r.contribution.amountCents)
             note = r.contribution.note
             campaignId = r.contribution.campaignId
+            collectorId = r.contribution.collectorId
             initialised = true
         }
     }
@@ -184,6 +199,7 @@ fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
                 )
             }
             OutlinedTextField(note, { note = it }, label = { Text("Note") }, modifier = Modifier.fillMaxWidth())
+            CollectorPicker(campaigns.firstOrNull { it.id == k.campaignId }, collectors, collectorId) { collectorId = it }
             if (campaigns.size > 1) {
                 Text("Harambee", style = MaterialTheme.typography.titleSmall)
                 CampaignPicker(campaigns, campaignId, { campaignId = it })
@@ -198,6 +214,7 @@ fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
                             k.copy(
                                 listName = if (applyToAll) null else listName,
                                 amountCents = cents, note = note.trim(), campaignId = campaignId ?: k.campaignId,
+                                collectorId = collectorId,
                             ),
                         )
                         onBack()
@@ -206,6 +223,15 @@ fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Save") }
 
+            if (k.status == Status.COUNTED) {
+                OutlinedButton(
+                    onClick = {
+                        val harambee = campaigns.firstOrNull { it.id == k.campaignId }?.name ?: "the Harambee"
+                        Sharing.messagePerson(context, k.senderPhone, Templates.fill(thankYou, r.displayName, k.amountCents, harambee, ""))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Send thank-you message") }
+            }
             when (k.status) {
                 Status.COUNTED -> OutlinedButton(
                     onClick = { scope.launch { repository.updateContribution(k.copy(status = Status.EXCLUDED)); onBack() } },

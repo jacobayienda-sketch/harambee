@@ -102,6 +102,7 @@ class HarambeeRepository(private val dao: HarambeeDao) {
         smsTime: Long,
         autoConfirm: Boolean = false,
         forcedCampaignId: Long? = null,
+        collectorId: Long? = null,
     ): IngestResult = lock.withLock {
         when (val message = MpesaParser.parse(body)) {
             MpesaMessage.NotRelevant -> IngestResult.Ignored
@@ -115,11 +116,11 @@ class HarambeeRepository(private val dao: HarambeeDao) {
                     IngestResult.Ignored
                 }
             }
-            is MpesaMessage.Received -> record(message.receipt, body, smsTime, autoConfirm, forcedCampaignId)
+            is MpesaMessage.Received -> record(message.receipt, body, smsTime, autoConfirm, forcedCampaignId, collectorId)
         }
     }
 
-    private suspend fun record(r: MpesaReceipt, raw: String?, fallbackTime: Long, autoConfirm: Boolean, forcedCampaignId: Long?): IngestResult {
+    private suspend fun record(r: MpesaReceipt, raw: String?, fallbackTime: Long, autoConfirm: Boolean, forcedCampaignId: Long?, collectorId: Long?): IngestResult {
         if (dao.findByCode(r.code) != null) return IngestResult.Duplicate(r.code)
         val time = r.transactionTime ?: fallbackTime
         val campaign = forcedCampaignId?.let { dao.getCampaign(it) } ?: dao.activeCampaignsAt(time).firstOrNull()
@@ -134,6 +135,7 @@ class HarambeeRepository(private val dao: HarambeeDao) {
             source = Source.MPESA_SMS,
             status = Status.PENDING,
             rawMessage = raw,
+            collectorId = collectorId,
         )
         val id = dao.insertContribution(pending)
         if (id == -1L) return IngestResult.Duplicate(r.code)
@@ -176,6 +178,7 @@ class HarambeeRepository(private val dao: HarambeeDao) {
                 status = Status.COUNTED,
                 source = contribution.source,
                 rawMessage = contribution.rawMessage,
+                collectorId = contribution.collectorId,
             )
             dao.updateContribution(ticked)
             ticked to true
@@ -225,6 +228,7 @@ class HarambeeRepository(private val dao: HarambeeDao) {
         receivedAt: Long,
         note: String,
         pledged: Boolean,
+        collectorId: Long? = null,
     ): AddResult = lock.withLock {
         val code = mpesaCode?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
         if (code != null && dao.findByCode(code) != null) return@withLock AddResult.DuplicateCode
@@ -241,6 +245,7 @@ class HarambeeRepository(private val dao: HarambeeDao) {
             source = source,
             status = if (pledged) Status.PLEDGED else Status.COUNTED,
             note = note.trim(),
+            collectorId = collectorId,
         )
         val id = dao.insertContribution(contribution)
         if (id == -1L) AddResult.DuplicateCode else AddResult.Added(id)
@@ -309,6 +314,52 @@ class HarambeeRepository(private val dao: HarambeeDao) {
     suspend fun setAlias(key: String, displayName: String?) {
         if (displayName.isNullOrBlank()) dao.deleteAlias(key) else dao.upsertAlias(ContributorAlias(key, displayName.trim()))
     }
+
+    // Collectors
+
+    fun collectors(campaignId: Long) = dao.observeCollectors(campaignId)
+
+    suspend fun addCollector(campaignId: Long, name: String, phone: String) =
+        dao.insertCollector(Collector(campaignId = campaignId, name = name.trim(), phone = Phone.normalize(phone) ?: ""))
+
+    suspend fun deleteCollector(collector: Collector) {
+        dao.clearCollector(collector.id)
+        dao.deleteCollector(collector)
+    }
+
+    // Members
+
+    val groups = dao.observeGroups()
+    fun members(group: String) = dao.observeMembers(group)
+
+    /** Adds people not already in the group (matched by phone or name). Returns how many were added. */
+    suspend fun addMembers(group: String, people: List<Pair<String, String?>>): Int {
+        val existing = dao.membersOf(group)
+        val existingNames = existing.map { Names.normalized(it.name) }.toMutableSet()
+        val existingPhones = existing.mapNotNull { Phone.normalize(it.phone) }.toMutableSet()
+        val fresh = people.filter { (name, phone) ->
+            val p = Phone.normalize(phone)
+            val key = Names.normalized(name)
+            val isNew = key.isNotEmpty() && key !in existingNames && (p == null || p !in existingPhones)
+            if (isNew) {
+                existingNames += key
+                p?.let { existingPhones += it }
+            }
+            isNew
+        }
+        dao.insertMembers(fresh.map { (name, phone) -> Member(groupName = group.trim(), name = name.trim(), phone = Phone.normalize(phone)) })
+        return fresh.size
+    }
+
+    /** Builds a members list from everyone who has contributed to a Harambee. */
+    suspend fun addContributorsAsMembers(campaignId: Long, group: String): Int {
+        val rows = dao.contributionsFor(campaignId).filter { it.status == Status.COUNTED || it.status == Status.PLEDGED }
+        val people = rows.map { (it.listName ?: it.senderName) to it.senderPhone?.takeUnless { p -> Phone.isMasked(p) } }
+        return addMembers(group, people)
+    }
+
+    suspend fun updateMember(member: Member) = dao.updateMember(member)
+    suspend fun deleteMember(member: Member) = dao.deleteMember(member)
 
     private fun appendNote(note: String, addition: String) = if (note.isBlank()) addition else "$note\n$addition"
 }

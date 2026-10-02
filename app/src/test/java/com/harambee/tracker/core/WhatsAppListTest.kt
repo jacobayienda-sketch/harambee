@@ -43,11 +43,11 @@ class WhatsAppListTest {
     @Test
     fun buildsUpdateInTheGroupsFormat() {
         val text = WhatsAppUpdateBuilder.build(
-            UpdateContent("Good Morning colleagues.", "Eliud Murkomen", "0723934660", "Thanks for your generous contribution 🙏", 10_000_000),
+            UpdateContent("Good Morning colleagues.", listOf(PayTo("Eliud Murkomen", "0723934660")), "Thanks for your generous contribution 🙏", 10_000_000),
             listOf(
-                UpdateLine("Eliud Murkomen", 100_000, true, 1),
-                UpdateLine("John cheruyot", 100_000, false, 3),
-                UpdateLine("Hillary Chebii", 150_000, true, 2),
+                UpdateLine("e", "Eliud Murkomen", 100_000, true, 1),
+                UpdateLine("j", "John cheruyot", 100_000, false, 3),
+                UpdateLine("h", "Hillary Chebii", 150_000, true, 2),
             ),
             UpdateOptions(),
             0,
@@ -76,9 +76,55 @@ class WhatsAppListTest {
     @Test
     fun doesNotRepeatNumberAlreadyInIntro() {
         val text = WhatsAppUpdateBuilder.build(
-            UpdateContent("Send to *Eliud Murkomen 0723934660*", "Eliud Murkomen", "0723934660", "", null),
+            UpdateContent("Send to *Eliud Murkomen 0723934660*", listOf(PayTo("Eliud Murkomen", "0723934660")), "", null),
             emptyList(), UpdateOptions(showTotal = false), 0,
         )
         assertFalse(text.contains("Send your contribution"))
+    }
+
+    private val repeatLines = listOf(
+        UpdateLine("tel:0711", "Oliver Kimutai", 50_000, true, 1),
+        UpdateLine("tel:0722", "Nancy Mosop", 50_000, true, 2),
+        UpdateLine("tel:0711", "Oliver Kimutai", 50_000, true, 3),
+    )
+
+    @Test
+    fun combinesRepeatPayersIntoOneLine() {
+        val text = WhatsAppUpdateBuilder.build(UpdateContent("", emptyList(), "", null), repeatLines, UpdateOptions(showTotal = false, addNextNumber = false), 0)
+        assertEquals("     *Contribution List*\n1. Oliver Kimutai 1,000 ✅\n2. Nancy Mosop 500 ✅", text)
+    }
+
+    @Test
+    fun canKeepRepeatPaymentsSeparate() {
+        val text = WhatsAppUpdateBuilder.build(UpdateContent("", emptyList(), "", null), repeatLines, UpdateOptions(showTotal = false, addNextNumber = false, combineRepeat = false), 0)
+        assertTrue(text.contains("3. Oliver Kimutai 500 ✅"))
+    }
+
+    @Test
+    fun latestOnlyKeepsRealNumbers() {
+        val lines = (1..30).map { UpdateLine("k$it", "Person $it", 100_000, true, it.toLong()) }
+        val text = WhatsAppUpdateBuilder.build(UpdateContent("", emptyList(), "", null), lines, UpdateOptions(listLimit = 5), 0)
+        assertTrue(text.contains("_…25 earlier names not shown_"))
+        assertFalse(text.contains("25. Person 25"))
+        assertTrue(text.contains("26. Person 26 1,000 ✅"))
+        assertTrue(text.contains("31. "))
+        assertTrue(text.contains("*Total received: KES 30,000*"))
+    }
+
+    @Test
+    fun totalsOnly() {
+        val text = WhatsAppUpdateBuilder.build(UpdateContent("", emptyList(), "", null), repeatLines, UpdateOptions(listLimit = 0), 0)
+        assertFalse(text.contains("Contribution List"))
+        assertTrue(text.contains("*Total received: KES 1,500*"))
+        assertTrue(text.contains("Contributors: 2"))
+    }
+
+    @Test
+    fun listsEveryCollectorNumber() {
+        val text = WhatsAppUpdateBuilder.build(
+            UpdateContent("", listOf(PayTo("Eliud Murkomen", "0723934660"), PayTo("Jane Too", "0711000111")), "", null),
+            emptyList(), UpdateOptions(showTotal = false, addNextNumber = false), 0,
+        )
+        assertTrue(text.startsWith("Send your contribution to *Eliud Murkomen 0723 934 660* or *Jane Too 0711 000 111*"))
     }
 }

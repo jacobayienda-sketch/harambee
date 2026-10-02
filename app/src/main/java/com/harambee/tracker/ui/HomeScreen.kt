@@ -69,6 +69,8 @@ fun HomeScreen(
     onNewCampaign: () -> Unit,
     onReview: () -> Unit,
     onImport: () -> Unit,
+    onMembers: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     val container = appContainer()
     val context = LocalContext.current
@@ -93,6 +95,8 @@ fun HomeScreen(
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "More") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(text = { Text("Import M-Pesa messages or a list") }, onClick = { menuOpen = false; onImport() })
+                        DropdownMenuItem(text = { Text("Members groups") }, onClick = { menuOpen = false; onMembers() })
+                        DropdownMenuItem(text = { Text("Settings & message wording") }, onClick = { menuOpen = false; onSettings() })
                     }
                 },
             )

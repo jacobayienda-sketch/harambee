@@ -23,6 +23,33 @@ data class Campaign(
     val payToNumber: String = "",
     val footer: String = "Thanks for your generous contribution 🙏",
     val createdAt: Long = System.currentTimeMillis(),
+    /** Members group whose contributions are tracked (welfare / church groups), or null. */
+    val memberGroup: String? = null,
+    /** Amount each member is expected to give, e.g. 1,000 per bereavement. */
+    val expectedCents: Long? = null,
+)
+
+/** Another committee member whose number also receives contributions. */
+@Entity(
+    tableName = "collectors",
+    indices = [Index("campaignId")],
+    foreignKeys = [ForeignKey(entity = Campaign::class, parentColumns = ["id"], childColumns = ["campaignId"], onDelete = ForeignKey.CASCADE)],
+)
+data class Collector(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val campaignId: Long,
+    val name: String,
+    val phone: String = "",
+)
+
+/** A member of a welfare / church / workplace group, reused across Harambees. */
+@Entity(tableName = "members", indices = [Index("groupName")])
+data class Member(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val groupName: String,
+    val name: String,
+    val phone: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
 )
 
 object Status {
@@ -82,6 +109,8 @@ data class Contribution(
     val note: String = "",
     val rawMessage: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Who received the money; null = this phone's number. */
+    val collectorId: Long? = null,
 )
 
 /** A preferred display name for everyone who pays from the same number. */

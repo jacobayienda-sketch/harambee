@@ -64,7 +64,13 @@ object WhatsAppListParser {
     }
 }
 
-data class UpdateLine(val name: String, val amountCents: Long, val paid: Boolean, val time: Long)
+/** One contribution as it appears in an update. [key] identifies the person (phone or name). */
+data class UpdateLine(val key: String, val name: String, val amountCents: Long, val paid: Boolean, val time: Long)
+
+/** A number people can send money to. */
+data class PayTo(val name: String, val number: String) {
+    fun label(): String = listOf(name.trim(), Phone.pretty(number).ifBlank { number.trim() }).filter { it.isNotBlank() }.joinToString(" ")
+}
 
 data class UpdateOptions(
     val showTotal: Boolean = true,
@@ -73,12 +79,15 @@ data class UpdateOptions(
     val addNextNumber: Boolean = true,
     val showDate: Boolean = false,
     val sortByAmount: Boolean = false,
+    /** One line per person: two payments of 500 show as "Name 1,000 ✅". */
+    val combineRepeat: Boolean = true,
+    /** null = whole list; 0 = totals only; n = only the latest n names (for very long lists). */
+    val listLimit: Int? = null,
 )
 
 data class UpdateContent(
     val intro: String,
-    val payToName: String,
-    val payToNumber: String,
+    val payTo: List<PayTo>,
     val footer: String,
     val targetCents: Long?,
 )
@@ -87,38 +96,60 @@ data class UpdateContent(
 object WhatsAppUpdateBuilder {
     private val dateFormat = DateTimeFormatter.ofPattern("EEE d MMM, h:mm a", Locale.US).withZone(MpesaParser.NAIROBI)
 
+    /** Lines in list order, with repeat payments merged when [combine] is set. */
+    fun arrange(lines: List<UpdateLine>, combine: Boolean, sortByAmount: Boolean): List<UpdateLine> {
+        val merged = if (!combine) lines else lines
+            .groupBy { it.key to it.paid }
+            .values
+            .map { group ->
+                val first = group.minBy { it.time }
+                first.copy(amountCents = group.sumOf { it.amountCents })
+            }
+        return if (sortByAmount) merged.sortedWith(compareByDescending<UpdateLine> { it.amountCents }.thenBy { it.time })
+        else merged.sortedBy { it.time }
+    }
+
     fun build(content: UpdateContent, lines: List<UpdateLine>, options: UpdateOptions, now: Long): String {
         val sb = StringBuilder()
-        val payTo = listOf(content.payToName.trim(), Phone.pretty(content.payToNumber).ifBlank { content.payToNumber.trim() })
-            .filter { it.isNotBlank() }.joinToString(" ")
         val intro = content.intro.trim()
         if (intro.isNotEmpty()) sb.append(intro).append("\n")
-        val numberDigits = content.payToNumber.filter { it.isDigit() }
-        val introHasNumber = numberDigits.length >= 9 && intro.filter { it.isDigit() }.contains(numberDigits.takeLast(9))
-        if (payTo.isNotEmpty() && !introHasNumber) {
+        val introDigits = intro.filter { it.isDigit() }
+        // Numbers already written in the appeal text are not repeated.
+        val payTo = content.payTo.filter { p ->
+            val digits = p.number.filter { it.isDigit() }
+            p.label().isNotBlank() && !(digits.length >= 9 && introDigits.contains(digits.takeLast(9)))
+        }
+        if (payTo.isNotEmpty()) {
             if (intro.isNotEmpty()) sb.append("\n")
-            sb.append("Send your contribution to *").append(payTo).append("*\n")
+            sb.append("Send your contribution to ").append(payTo.joinToString(" or ") { "*${it.label()}*" }).append("\n")
         }
         if (sb.isNotEmpty()) sb.append("\n")
 
-        sb.append("     *Contribution List*")
-        if (options.showDate) sb.append("\n_Updated ").append(dateFormat.format(Instant.ofEpochMilli(now))).append("_")
-        sb.append("\n")
-
-        val visible = lines.filter { it.paid || options.showPledges }
-        val ordered = if (options.sortByAmount) visible.sortedWith(compareByDescending<UpdateLine> { it.amountCents }.thenBy { it.time })
-        else visible.sortedBy { it.time }
-        ordered.forEachIndexed { i, l ->
-            sb.append(i + 1).append(". ").append(l.name).append(" ").append(Money.format(l.amountCents))
-            if (l.paid) sb.append(" ✅")
+        val ordered = arrange(lines.filter { it.paid || options.showPledges }, options.combineRepeat, options.sortByAmount)
+        val limit = options.listLimit
+        if (limit != 0) {
+            sb.append("     *Contribution List*")
+            if (options.showDate) sb.append("\n_Updated ").append(dateFormat.format(Instant.ofEpochMilli(now))).append("_")
             sb.append("\n")
+            val hidden = if (limit != null && limit < ordered.size) ordered.size - limit else 0
+            if (hidden > 0) sb.append("_…").append(hidden).append(" earlier names not shown_\n")
+            ordered.forEachIndexed { i, l ->
+                if (i < hidden) return@forEachIndexed
+                sb.append(i + 1).append(". ").append(l.name).append(" ").append(Money.format(l.amountCents))
+                if (l.paid) sb.append(" ✅")
+                sb.append("\n")
+            }
+            if (options.addNextNumber) sb.append(ordered.size + 1).append(". \n")
+        } else if (options.showDate) {
+            sb.append("_Updated ").append(dateFormat.format(Instant.ofEpochMilli(now))).append("_\n")
         }
-        if (options.addNextNumber) sb.append(ordered.size + 1).append(". \n")
 
         val paidTotal = lines.filter { it.paid }.sumOf { it.amountCents }
         val pledged = lines.filter { !it.paid }.sumOf { it.amountCents }
-        if (options.showTotal) {
-            sb.append("\n*Total received: KES ").append(Money.format(paidTotal)).append("*")
+        if (options.showTotal || limit == 0) {
+            if (limit != 0) sb.append("\n")
+            sb.append("*Total received: KES ").append(Money.format(paidTotal)).append("*")
+            if (limit == 0) sb.append("\nContributors: ").append(lines.filter { it.paid }.map { it.key }.distinct().size)
             if (options.showPledges && pledged > 0) sb.append("\nPledges pending: KES ").append(Money.format(pledged))
             val target = content.targetCents
             if (options.showTarget && target != null && target > 0) {
@@ -131,7 +162,7 @@ object WhatsAppUpdateBuilder {
             sb.append("\n")
         }
         val footer = content.footer.trim()
-        if (footer.isNotEmpty()) sb.append(if (options.showTotal) "\n" else "").append(footer).append("\n")
+        if (footer.isNotEmpty()) sb.append(if (options.showTotal || limit == 0) "\n" else "").append(footer).append("\n")
         return sb.toString().trimEnd()
     }
 }

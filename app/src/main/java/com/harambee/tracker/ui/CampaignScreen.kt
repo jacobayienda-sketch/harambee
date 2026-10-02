@@ -73,6 +73,10 @@ fun CampaignScreen(
     onAdd: () -> Unit,
     onImport: () -> Unit,
     onOpenContribution: (Long) -> Unit,
+    onReport: () -> Unit,
+    onPledges: () -> Unit,
+    onCollectors: () -> Unit,
+    onMembers: () -> Unit,
 ) {
     val repository = appContainer().repository
     val context = LocalContext.current
@@ -104,6 +108,10 @@ fun CampaignScreen(
                 IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "More") }
                 DropdownMenu(menuOpen, { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("Edit Harambee") }, onClick = { menuOpen = false; onEdit() })
+                    DropdownMenuItem(text = { Text("Closing report") }, onClick = { menuOpen = false; onReport() })
+                    DropdownMenuItem(text = { Text("Pledge reminders") }, onClick = { menuOpen = false; onPledges() })
+                    DropdownMenuItem(text = { Text("Collectors (other numbers)") }, onClick = { menuOpen = false; onCollectors() })
+                    DropdownMenuItem(text = { Text("Members: who hasn't contributed") }, onClick = { menuOpen = false; onMembers() })
                     DropdownMenuItem(text = { Text("Import messages or a list") }, onClick = { menuOpen = false; onImport() })
                     DropdownMenuItem(text = { Text("Export to spreadsheet (CSV)") }, onClick = {
                         menuOpen = false
@@ -160,6 +168,15 @@ fun CampaignScreen(
                         Icon(Icons.Default.Add, null)
                         Spacer(Modifier.width(8.dp))
                         Text("Add / pledge")
+                    }
+                }
+            }
+            val pledgeCount = rows.count { it.contribution.status == Status.PLEDGED }
+            if (pledgeCount > 0 || c.memberGroup != null) {
+                item {
+                    Row(Modifier.padding(16.dp, 8.dp, 16.dp, 0.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (pledgeCount > 0) OutlinedButton(onClick = onPledges, modifier = Modifier.weight(1f)) { Text("Remind $pledgeCount pledges") }
+                        if (c.memberGroup != null) OutlinedButton(onClick = onMembers, modifier = Modifier.weight(1f)) { Text("Members status") }
                     }
                 }
             }

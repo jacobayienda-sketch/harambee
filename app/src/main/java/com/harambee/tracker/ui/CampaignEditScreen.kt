@@ -1,6 +1,7 @@
 package com.harambee.tracker.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.harambee.tracker.core.Money
 import com.harambee.tracker.core.MpesaParser
 import com.harambee.tracker.data.Campaign
@@ -55,6 +59,10 @@ fun CampaignEditScreen(campaignId: Long?, onDone: (Long) -> Unit, onBack: () -> 
     var footer by remember { mutableStateOf("Thanks for your generous contribution 🙏") }
     var startAt by remember { mutableLongStateOf(Formats.startOfToday()) }
     var active by remember { mutableStateOf(true) }
+    var memberGroup by remember { mutableStateOf("") }
+    var expected by remember { mutableStateOf("") }
+    val groups by repository.groups.collectAsStateWithLifecycle(emptyList())
+    var groupMenu by remember { mutableStateOf(false) }
     var pickingDate by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -70,6 +78,8 @@ fun CampaignEditScreen(campaignId: Long?, onDone: (Long) -> Unit, onBack: () -> 
                 footer = c.footer
                 startAt = c.startAt
                 active = c.isActive
+                memberGroup = c.memberGroup ?: ""
+                expected = c.expectedCents?.let { Money.format(it) } ?: ""
             }
         }
     }
@@ -116,6 +126,25 @@ fun CampaignEditScreen(campaignId: Long?, onDone: (Long) -> Unit, onBack: () -> 
                 }
                 Switch(active, { active = it })
             }
+            Text("Members group (optional)", style = MaterialTheme.typography.titleSmall)
+            Text("For welfare / church groups: see who has and hasn't contributed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Box {
+                OutlinedButton(onClick = { groupMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text(memberGroup.ifBlank { if (groups.isEmpty()) "No groups yet — create one under Members" else "None" })
+                }
+                DropdownMenu(groupMenu, { groupMenu = false }) {
+                    DropdownMenuItem(text = { Text("None") }, onClick = { memberGroup = ""; groupMenu = false })
+                    groups.forEach { g -> DropdownMenuItem(text = { Text(g) }, onClick = { memberGroup = g; groupMenu = false }) }
+                }
+            }
+            if (memberGroup.isNotBlank()) {
+                OutlinedTextField(
+                    expected, { expected = it },
+                    label = { Text("Expected from each member (KES, optional)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                )
+            }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Button(
                 onClick = {
@@ -130,6 +159,8 @@ fun CampaignEditScreen(campaignId: Long?, onDone: (Long) -> Unit, onBack: () -> 
                                     name = name.trim(), intro = intro.trim(), targetCents = targetCents,
                                     payToName = payToName.trim(), payToNumber = payToNumber.trim(),
                                     footer = footer.trim(), startAt = startAt, isActive = active,
+                                    memberGroup = memberGroup.ifBlank { null },
+                                    expectedCents = if (memberGroup.isBlank()) null else Money.parseToCents(expected),
                                 ),
                             )
                             onDone(id)

@@ -25,6 +25,12 @@ import com.harambee.tracker.ui.ImportScreen
 import com.harambee.tracker.ui.ReviewListScreen
 import com.harambee.tracker.ui.ReviewScreen
 import com.harambee.tracker.ui.UpdateScreen
+import com.harambee.tracker.ui.CollectorsScreen
+import com.harambee.tracker.ui.MemberStatusScreen
+import com.harambee.tracker.ui.MembersScreen
+import com.harambee.tracker.ui.PledgesScreen
+import com.harambee.tracker.ui.ReportScreen
+import com.harambee.tracker.ui.SettingsScreen
 
 class MainActivity : ComponentActivity() {
     /** A screen requested from outside: a notification tap or text shared into the app. */
@@ -79,6 +85,8 @@ private fun AppNavigation(request: String?, sharedText: String, onRequestHandled
                 onNewCampaign = { nav.navigate("campaign-edit?id=-1") },
                 onReview = { nav.navigate("review") },
                 onImport = { nav.navigate("import?campaignId=-1&shared=false") },
+                onMembers = { nav.navigate("members") },
+                onSettings = { nav.navigate("settings") },
             )
         }
         composable("campaign-edit?id={id}", listOf(navArgument("id") { type = NavType.LongType; defaultValue = -1L })) { entry ->
@@ -102,8 +110,32 @@ private fun AppNavigation(request: String?, sharedText: String, onRequestHandled
                 onAdd = { nav.navigate("add/$id") },
                 onImport = { nav.navigate("import?campaignId=$id&shared=false") },
                 onOpenContribution = { nav.navigate("contribution/$it") },
+                onReport = { nav.navigate("report/$id") },
+                onPledges = { nav.navigate("pledges/$id") },
+                onCollectors = { nav.navigate("collectors/$id") },
+                onMembers = { nav.navigate("member-status/$id") },
             )
         }
+        composable("report/{id}", listOf(longArg("id"))) { entry ->
+            ReportScreen(entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
+        }
+        composable("pledges/{id}", listOf(longArg("id"))) { entry ->
+            PledgesScreen(entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() }, onOpen = { nav.navigate("contribution/$it") })
+        }
+        composable("collectors/{id}", listOf(longArg("id"))) { entry ->
+            CollectorsScreen(entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
+        }
+        composable("member-status/{id}", listOf(longArg("id"))) { entry ->
+            val id = entry.arguments!!.getLong("id")
+            MemberStatusScreen(
+                id,
+                onBack = { nav.popBackStack() },
+                onEdit = { nav.navigate("campaign-edit?id=$id") },
+                onManageMembers = { nav.navigate("members") },
+            )
+        }
+        composable("members") { MembersScreen(onBack = { nav.popBackStack() }) }
+        composable("settings") { SettingsScreen(onBack = { nav.popBackStack() }) }
         composable("add/{id}", listOf(longArg("id"))) { entry ->
             AddContributionScreen(entry.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
         }

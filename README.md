@@ -46,6 +46,14 @@ You can turn on or off: the totals and target, pledges, the blank next number, a
 - **Manual entries:** cash, bank, M-Pesa to another number (with the code, to block duplicates), and pledges.
 - **Rename** a contributor for the list ("CO Peter chesos"), for one payment or for every payment from that number.
 - **Reversals** from Safaricom are taken out of the total automatically.
+- **One line per person:** repeat payments combine ("Oliver Kimutai 1,000 ✅"). This is an option on the update screen.
+- **Long lists:** choose the whole list, the latest 20 names (numbers stay correct), or totals only. Share the full list as a PDF.
+- **Closing report:** total, contributors, breakdown by method and by collector, unpaid pledges and members who contributed, plus the full list. Share it on WhatsApp, as a PDF, or close the Harambee.
+- **Several collectors:** add other committee members' numbers. They appear in the update, and forwarded or pasted messages can be marked "received by" them, with a total per person.
+- **Thank-you messages:** a "Say thanks" button on the payment notification, or "Send thank-you message" on any contribution. It opens WhatsApp (or SMS) with the message typed in. When M-Pesa hides part of the number, you pick the contact.
+- **Pledge reminders:** share the pending-pledges list to the group, or remind each person privately.
+- **Members groups** (welfare / church / workplace): keep a members list (typed, pasted, or built from a past Harambee's contributors) and link it to a Harambee. You see who has and hasn't contributed, the expected amount each, a "yet to contribute" list for the group, and one-tap reminders.
+- **Message wording:** edit the thank-you and reminder templates in Settings.
 - **Export** to CSV for a spreadsheet.
 - Works offline. Nothing leaves the phone.
 
