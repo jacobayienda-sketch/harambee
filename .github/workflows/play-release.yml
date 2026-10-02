@@ -1,0 +1,76 @@
+name: Play Store release
+
+# Run from GitHub → Actions → "Play Store release" → Run workflow.
+# Needs these repository secrets (Settings → Secrets and variables → Actions):
+#   UPLOAD_KEYSTORE_BASE64   base64 of your harambee-upload.jks
+#   UPLOAD_STORE_PASSWORD    keystore password
+#   UPLOAD_KEY_ALIAS         key alias (e.g. upload)
+#   UPLOAD_KEY_PASSWORD      key password
+#   PLAY_SERVICE_ACCOUNT_JSON  Google Play service-account key (JSON) with release permissions
+# The very first upload of a new app must be done by hand in Play Console; this handles every one after.
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Play track"
+        type: choice
+        options: [internal, alpha, beta, production]
+        default: internal
+      status:
+        description: "Release status"
+        type: choice
+        options: [completed, draft]
+        default: completed
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Tests
+        run: ./gradlew testPlayReleaseUnitTest
+
+      - name: Set up signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.UPLOAD_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.UPLOAD_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "UPLOAD_KEYSTORE_BASE64 secret is missing"; exit 1; }
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/upload.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > keystore.properties
+
+      - name: Build signed bundle
+        run: ./gradlew bundlePlayRelease
+
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.harambee.tracker
+          releaseFiles: app/build/outputs/bundle/playRelease/app-play-release.aab
+          track: ${{ inputs.track }}
+          status: ${{ inputs.status }}
+          mappingFile: app/build/outputs/mapping/playRelease/mapping.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: play-bundle
+          path: app/build/outputs/bundle/playRelease/*.aab
+
+      - name: Remove signing files
+        if: always()
+        run: rm -f keystore.properties "$RUNNER_TEMP/upload.jks"

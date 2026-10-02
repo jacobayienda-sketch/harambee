@@ -56,6 +56,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -132,7 +135,7 @@ fun DashboardScreen(campaignId: Long, onBack: () -> Unit, onPeople: () -> Unit, 
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Tile("Contributors", tally.contributors.toString(), Modifier.weight(1f))
-                Tile("Average", if (tally.contributors > 0) Money.formatKes(tally.totalCents / tally.contributors) else "—", Modifier.weight(1f))
+                Tile("Average", if (tally.contributors > 0) Money.formatKes((tally.totalCents / tally.contributors + 50) / 100 * 100) else "—", Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Tile("Pledges unpaid", "${Money.formatKes(pledged.sumOf { it.contribution.amountCents })} (${pledged.size})", Modifier.weight(1f))
@@ -277,9 +280,17 @@ private fun DailyChart(counted: List<ContributionRow>) {
                 val h = size.height * v / max
                 if (h > 0f) {
                     val alpha = if (selected < 0 || selected == i) 1f else 0.55f
-                    // Rounded top, square base on the baseline.
-                    drawRoundRect(color.copy(alpha = alpha), topLeft = Offset(i * slot + gap / 2, size.height - h), size = Size(slot - gap, h), cornerRadius = CornerRadius(radius))
-                    drawRect(color.copy(alpha = alpha), topLeft = Offset(i * slot + gap / 2, size.height - minOf(h, radius)), size = Size(slot - gap, minOf(h, radius)))
+                    // One shape: rounded top, square base on the baseline (no overlapping layers).
+                    val r = CornerRadius(minOf(radius, h))
+                    val bar = Path().apply {
+                        addRoundRect(
+                            RoundRect(
+                                Rect(i * slot + gap / 2, size.height - h, (i + 1) * slot - gap / 2, size.height),
+                                topLeft = r, topRight = r, bottomRight = CornerRadius.Zero, bottomLeft = CornerRadius.Zero,
+                            ),
+                        )
+                    }
+                    drawPath(bar, color.copy(alpha = alpha))
                 }
             }
             drawLine(muted, Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 1.dp.toPx())
@@ -330,7 +341,10 @@ fun PeopleScreen(campaignId: Long, onBack: () -> Unit, onOpenContribution: (Long
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 32.dp)) {
             item {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("${people.size} people · ${Money.formatKes(people.sumOf { it.paidCents })} paid", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "${people.size} people · ${people.count { it.paidCents > 0 }} paid · ${Money.formatKes(people.sumOf { it.paidCents })}",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
                     OutlinedTextField(query, { query = it }, placeholder = { Text("Search name or phone") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PeopleSort.entries.forEach { s -> FilterChip(sort == s, { sort = s }, label = { Text(s.label) }) }

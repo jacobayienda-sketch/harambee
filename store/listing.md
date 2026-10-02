@@ -44,7 +44,7 @@ Harambee Tracker does not send or receive money. It is a record-keeping tool for
 
 **Category:** Finance (alternative: Productivity)
 **Tags:** fundraising, M-Pesa, contributions, Kenya, WhatsApp
-**Contact email:** (your email)
+**Contact email:** jacobayienda@gmail.com
 **Privacy policy URL:** (where you host store/privacy-policy.html, see release-steps.md)
 
 ## Graphics needed

@@ -30,7 +30,7 @@ Output: `app/build/outputs/bundle/playRelease/app-play-release.aab`
 The app id is `com.harambee.tracker`. If Play says it's taken, change `applicationId` in `app/build.gradle.kts` (e.g. `com.yourname.harambeetracker`) **before the first upload**. It can never change afterwards.
 
 ## 5. Privacy policy URL
-Host `store/privacy-policy.html` publicly (replace YOUR_EMAIL first). Some easy options:
+Host `store/privacy-policy.html` publicly. Some easy options:
 - **GitHub Pages:** works if the repository is public, or with a paid plan.
 - **Google Sites:** paste the text into a new site.
 - Any website you already have.
@@ -43,4 +43,23 @@ Host `store/privacy-policy.html` publicly (replace YOUR_EMAIL first). Some easy 
 5. After 14 days: **Production → Create release**, upload the same or a newer .aab, and send it for review. Reviews usually take a few days.
 
 ## 7. Each update
-Increase `versionCode` (and `versionName`) in `app/build.gradle.kts`, run `./gradlew bundlePlayRelease`, then upload in Play Console.
+Increase `versionCode` (and `versionName`) in `app/build.gradle.kts`, then either:
+- **By hand:** run `./gradlew bundlePlayRelease` and upload the .aab in Play Console, or
+- **Automatically:** GitHub → Actions → **Play Store release** → Run workflow, then choose the track (internal / alpha / beta / production). One-time setup:
+  1. Play Console → **Setup → API access** → create a service account in Google Cloud, give it **Release manager** permission for this app, and download its JSON key.
+  2. GitHub repository → **Settings → Secrets and variables → Actions** → add:
+     - `UPLOAD_KEYSTORE_BASE64`: run `base64 -w0 harambee-upload.jks` (macOS: `base64 -i harambee-upload.jks`) and paste the output
+     - `UPLOAD_STORE_PASSWORD`, `UPLOAD_KEY_ALIAS`, `UPLOAD_KEY_PASSWORD`
+     - `PLAY_SERVICE_ACCOUNT_JSON`: the whole JSON file's contents
+  3. The very first release must still be uploaded by hand (step 6). The workflow handles every one after that.
+
+## Store graphics (ready in `store/graphics/`)
+| File | Use in Play Console |
+|---|---|
+| `icon-512.png` | App icon (512×512) |
+| `feature-graphic-1024x500.png` | Feature graphic |
+| `screenshot-1-home.png` … `screenshot-6-contributors.png` | Phone screenshots (1233×2460) |
+
+The screenshots are the real app (Play edition) with **fictional** sample names. To regenerate them after UI changes, run:
+`./gradlew testPlayDebugUnitTest -Pscreenshots --tests '*StoreScreenshots*'`
+To rebuild the feature graphic, open `store/feature-graphic.html` in a browser at 1024×500 and screenshot it.

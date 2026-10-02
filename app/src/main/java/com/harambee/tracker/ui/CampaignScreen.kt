@@ -178,7 +178,7 @@ fun CampaignScreen(
             if (pledgeCount > 0 || c.memberGroup != null) {
                 item {
                     Row(Modifier.padding(16.dp, 8.dp, 16.dp, 0.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (pledgeCount > 0) OutlinedButton(onClick = onPledges, modifier = Modifier.weight(1f)) { Text("Remind $pledgeCount pledges") }
+                        if (pledgeCount > 0) OutlinedButton(onClick = onPledges, modifier = Modifier.weight(1f)) { Text(if (pledgeCount == 1) "Remind 1 pledge" else "Remind $pledgeCount pledges") }
                         if (c.memberGroup != null) OutlinedButton(onClick = onMembers, modifier = Modifier.weight(1f)) { Text("Members status") }
                     }
                 }

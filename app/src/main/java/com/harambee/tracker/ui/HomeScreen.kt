@@ -263,7 +263,7 @@ private fun ProgressRing(total: Long, target: Long) {
         CircularProgressIndicator(
             progress = { (total.toFloat() / target).coerceIn(0f, 1f) },
             modifier = Modifier.size(56.dp),
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            trackColor = MaterialTheme.colorScheme.outlineVariant,
         )
         Text("${(total * 100 / target).coerceAtMost(999)}%", style = MaterialTheme.typography.labelMedium)
     }

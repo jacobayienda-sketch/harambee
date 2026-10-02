@@ -65,6 +65,21 @@ android {
         compose = true
         buildConfig = true
     }
+
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            all { test ->
+                // Store screenshots render the real screens (Robolectric) and only run on request:
+                // ./gradlew testPlayDebugUnitTest -Pscreenshots --tests '*StoreScreenshots*'
+                if (!project.hasProperty("screenshots")) test.exclude("**/StoreScreenshots*")
+                test.systemProperty("roborazzi.test.record", "true")
+                test.systemProperty("screenshots.dir", rootProject.file("store/graphics").absolutePath)
+                // Robolectric downloads Android jars; allow overriding the Maven mirror.
+                System.getenv("ROBOLECTRIC_REPO")?.let { test.systemProperty("robolectric.dependency.repo.url", it) }
+            }
+        }
+    }
 }
 
 kotlin {
@@ -103,4 +118,11 @@ dependencies {
     ksp("androidx.room:room-compiler:2.8.3")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.76.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.76.0")
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
