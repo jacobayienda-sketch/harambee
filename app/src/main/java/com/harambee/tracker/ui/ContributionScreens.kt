@@ -1,0 +1,248 @@
+package com.harambee.tracker.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.harambee.tracker.core.Money
+import com.harambee.tracker.core.Phone
+import com.harambee.tracker.data.HarambeeRepository
+import com.harambee.tracker.data.Source
+import com.harambee.tracker.data.Status
+import kotlinx.coroutines.launch
+
+/** Add a cash/bank payment, an M-Pesa payment made to someone else's phone, or a pledge. */
+@Composable
+fun AddContributionScreen(campaignId: Long, onBack: () -> Unit) {
+    val repository = appContainer().repository
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var source by remember { mutableStateOf(Source.CASH) }
+    var code by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    var pledge by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Scaffold(topBar = { BackTopBar(if (pledge) "Add pledge" else "Add contribution", onBack) }) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(!pledge, { pledge = false }, label = { Text("Paid ✅") })
+                FilterChip(pledge, { pledge = true }, label = { Text("Pledge (not yet paid)") })
+            }
+            OutlinedTextField(name, { name = it }, label = { Text("Name as it should appear *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                amount, { amount = it }, label = { Text("Amount (KES) *") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+            )
+            if (!pledge) {
+                Text("Paid by", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(Source.CASH to "Cash", Source.MPESA_MANUAL to "M-Pesa", Source.BANK to "Bank", Source.OTHER to "Other").forEach { (value, label) ->
+                        FilterChip(source == value, { source = value }, label = { Text(label) })
+                    }
+                }
+                if (source == Source.MPESA_MANUAL) {
+                    OutlinedTextField(
+                        code, { code = it.uppercase() }, label = { Text("M-Pesa code (recommended)") },
+                        supportingText = { Text("Prevents the same payment being counted twice") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            OutlinedTextField(
+                phone, { phone = it }, label = { Text("Phone (optional)") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(note, { note = it }, label = { Text("Note (optional)") }, modifier = Modifier.fillMaxWidth())
+            if (pledge) {
+                Text(
+                    "When this person's M-Pesa payment arrives, the pledge is ticked ✅ automatically.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Button(
+                onClick = {
+                    val cents = Money.parseToCents(amount)
+                    when {
+                        name.isBlank() -> error = "Enter a name"
+                        cents == null || cents <= 0 -> error = "Enter an amount"
+                        else -> scope.launch {
+                            val result = repository.addManual(
+                                campaignId = campaignId, name = name, phone = phone.ifBlank { null }, amountCents = cents,
+                                source = if (pledge) Source.OTHER else source,
+                                mpesaCode = code.takeIf { !pledge && source == Source.MPESA_MANUAL },
+                                receivedAt = System.currentTimeMillis(), note = note, pledged = pledge,
+                            )
+                            when (result) {
+                                is HarambeeRepository.AddResult.Added -> onBack()
+                                HarambeeRepository.AddResult.DuplicateCode -> error = "M-Pesa code ${code.uppercase()} is already recorded"
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save") }
+        }
+    }
+}
+
+/** Details of one line: rename, exclude, move, or delete. */
+@Composable
+fun ContributionScreen(contributionId: Long, onBack: () -> Unit) {
+    val repository = appContainer().repository
+    val scope = rememberCoroutineScope()
+    val row by repository.contribution(contributionId).collectAsStateWithLifecycle(null)
+    val campaigns by repository.campaigns.collectAsStateWithLifecycle(emptyList())
+    var name by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    var applyToAll by remember { mutableStateOf(false) }
+    var campaignId by remember { mutableStateOf<Long?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var initialised by remember { mutableStateOf(false) }
+
+    val r = row
+    LaunchedEffect(r) {
+        if (r != null && !initialised) {
+            name = r.displayName
+            amount = Money.format(r.contribution.amountCents)
+            note = r.contribution.note
+            campaignId = r.contribution.campaignId
+            initialised = true
+        }
+    }
+
+    Scaffold(topBar = { BackTopBar("Contribution", onBack) }) { padding ->
+        if (r == null) return@Scaffold
+        val k = r.contribution
+        val fromMpesa = k.mpesaCode != null
+        Column(
+            Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    LabelValue("Status", when (k.status) {
+                        Status.COUNTED -> "Counted ✅"
+                        Status.PLEDGED -> "Pledge (not yet paid)"
+                        Status.EXCLUDED -> "Not counted"
+                        Status.REVERSED -> "Reversed"
+                        else -> "Waiting for review"
+                    })
+                    LabelValue("Method", Source.label(k.source))
+                    if (fromMpesa) LabelValue("M-Pesa name", k.senderName)
+                    k.senderPhone?.let { LabelValue("Phone", Phone.pretty(it)) }
+                    k.mpesaCode?.let { LabelValue("M-Pesa code", it) }
+                    LabelValue("Received", Formats.dateTime(k.receivedAt))
+                }
+            }
+            OutlinedTextField(name, { name = it }, label = { Text("Name on the list") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            if (fromMpesa) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(applyToAll, { applyToAll = it })
+                    Text("Use this name for every payment from this number")
+                }
+            } else {
+                OutlinedTextField(
+                    amount, { amount = it }, label = { Text("Amount (KES)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            OutlinedTextField(note, { note = it }, label = { Text("Note") }, modifier = Modifier.fillMaxWidth())
+            if (campaigns.size > 1) {
+                Text("Harambee", style = MaterialTheme.typography.titleSmall)
+                CampaignPicker(campaigns, campaignId, { campaignId = it })
+            }
+            Button(
+                onClick = {
+                    scope.launch {
+                        val cents = if (fromMpesa) k.amountCents else Money.parseToCents(amount) ?: k.amountCents
+                        val listName = name.trim().takeIf { it.isNotEmpty() && it != k.senderName }
+                        if (applyToAll) repository.setAlias(k.contributorKey, listName)
+                        repository.updateContribution(
+                            k.copy(
+                                listName = if (applyToAll) null else listName,
+                                amountCents = cents, note = note.trim(), campaignId = campaignId ?: k.campaignId,
+                            ),
+                        )
+                        onBack()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save") }
+
+            when (k.status) {
+                Status.COUNTED -> OutlinedButton(
+                    onClick = { scope.launch { repository.updateContribution(k.copy(status = Status.EXCLUDED)); onBack() } },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Not a contribution — remove from total") }
+                Status.PLEDGED -> OutlinedButton(
+                    onClick = { scope.launch { repository.updateContribution(k.copy(status = Status.COUNTED)); onBack() } },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Mark as paid ✅ (cash / other)") }
+                Status.EXCLUDED -> OutlinedButton(
+                    onClick = { scope.launch { repository.updateContribution(k.copy(status = Status.COUNTED)); onBack() } },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Count it again") }
+                else -> Unit
+            }
+            if (!fromMpesa) {
+                TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            } else {
+                Text(
+                    "M-Pesa payments can't be deleted, only excluded, so the same message can never be counted twice.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            k.rawMessage?.let {
+                Text("Original message", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        if (confirmDelete) {
+            AlertDialog(
+                onDismissRequest = { confirmDelete = false },
+                title = { Text("Delete this entry?") },
+                confirmButton = { TextButton(onClick = { scope.launch { repository.deleteContribution(k); onBack() } }) { Text("Delete") } },
+                dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+            )
+        }
+    }
+}
