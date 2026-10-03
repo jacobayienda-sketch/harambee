@@ -1,11 +1,8 @@
 package com.harambee.tracker
 
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
-import androidx.core.content.ContextCompat
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -28,7 +25,6 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
-import java.io.FileOutputStream
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -154,17 +150,5 @@ class StoreScreenshots {
         compose.setContent { HarambeeTheme { PeopleScreen(campaignId, {}, {}) } }
         waitFor("people")
         shoot("screenshot-6-contributors")
-    }
-
-    /** 512×512 Play Store icon from the launcher icon's own artwork. */
-    @Test fun icon() {
-        val size = 512
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
-        canvas.drawColor(ContextCompat.getColor(app, R.color.launcher_background))
-        val fg = ContextCompat.getDrawable(app, R.drawable.ic_launcher_foreground)!!
-        fg.setBounds(0, 0, size, size)
-        fg.draw(canvas)
-        FileOutputStream(File(out, "icon-512.png")).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 }

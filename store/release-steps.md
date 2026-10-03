@@ -56,10 +56,19 @@ Increase `versionCode` (and `versionName`) in `app/build.gradle.kts`, then eithe
 ## Store graphics (ready in `store/graphics/`)
 | File | Use in Play Console |
 |---|---|
-| `icon-512.png` | App icon (512×512) |
+| `icon-512.png` | App icon (512×512), from `store/brand/icon.svg` |
 | `feature-graphic-1024x500.png` | Feature graphic |
 | `screenshot-1-home.png` … `screenshot-6-contributors.png` | Phone screenshots (1233×2460) |
 
 The screenshots are the real app (Play edition) with **fictional** sample names. To regenerate them after UI changes, run:
 `./gradlew testPlayDebugUnitTest -Pscreenshots --tests '*StoreScreenshots*'`
 To rebuild the feature graphic, open `store/feature-graphic.html` in a browser at 1024×500 and screenshot it.
+
+## Logo
+`store/brand/` holds the logo: three people standing together with a gold "confirmed" badge (Harambee = *pulling together*; ✓ = every contribution accounted for).
+- `icon.svg` / `icon-1024.png`: app icon, square (stores add their own rounding)
+- `logo-horizontal(-dark).svg/.png`: icon + "Harambee TRACKER" wordmark, for letterheads, posters and WhatsApp group pictures
+- `mark-on-light`, `mark-mono`: the symbol alone, in colour or one colour, on transparent backgrounds
+- Colours: green `#0B6E4F`, gold `#F5B83D`, ink `#10241C`
+
+`make_logo.py` generates the SVGs **and** the app's launcher, themed and notification icons from one design: `python3 store/brand/make_logo.py`.

@@ -55,6 +55,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -126,7 +127,7 @@ fun OnboardingScreen(onDone: (createFirst: Boolean) -> Unit) {
             HorizontalPager(pager, Modifier.weight(1f)) { index ->
                 val page = introPages[index]
                 Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(page.emoji, fontSize = 72.sp)
+                    if (index == 0) AppLogo(112.dp) else Text(page.emoji, fontSize = 72.sp)
                     Spacer(Modifier.height(24.dp))
                     Text(page.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(12.dp))
@@ -165,6 +166,19 @@ fun OnboardingScreen(onDone: (createFirst: Boolean) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** The app icon artwork, for the welcome screen. */
+@Composable
+fun AppLogo(size: androidx.compose.ui.unit.Dp) {
+    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(size * 0.24f), color = androidx.compose.ui.graphics.Color(0xFF0B6E4F), modifier = Modifier.size(size)) {
+        // The foreground is drawn on the 108-unit adaptive canvas; zoom past its safe-zone margin.
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(com.harambee.tracker.R.drawable.ic_launcher_foreground),
+            contentDescription = "Harambee Tracker",
+            modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = 1.45f, scaleY = 1.45f),
+        )
     }
 }
 
