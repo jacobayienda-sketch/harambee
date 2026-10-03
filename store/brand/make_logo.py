@@ -93,22 +93,34 @@ open("store/brand/mark-on-light.svg", "w").write(svg(svg_mark("#FFFFFF", GREEN, 
 # Single colour (stamps, embroidery, Android themed icon).
 open("store/brand/mark-mono.svg", "w").write(svg(svg_mark("#FFFFFF", INK, INK, "#FFFFFF"), None))
 
-# Horizontal logo: rounded icon + wordmark.
-def lockup(dark):
+TAGLINE = "Kila mchango unahesabiwa"  # Kiswahili: "Every contribution is counted" (and so, every contribution counts)
+
+# Horizontal logo: rounded icon + wordmark (+ optional Kiswahili tagline underneath).
+def lockup(dark, tagline=False):
     bg = INK if dark else "#FFFFFF"
     text = "#FFFFFF" if dark else INK
     sub = "#9FD9C2" if dark else GREEN
     icon = svg_mark(GREEN, WHITE, GOLD, GREEN)
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 140" width="1680" height="420">'
-            f'<rect width="560" height="140" fill="{bg}"/>'
-            f'<g transform="translate(16,16)"><svg viewBox="0 0 108 108" width="108" height="108">'
+    font = "Poppins, Montserrat, Roboto, Arial, sans-serif"
+    h = 176 if tagline else 140
+    icon_y = (h - 108) / 2
+    top = 10 if tagline else 0   # text block shifts down slightly when the tagline is under it
+    tag = (f'<line x1="146" y1="{112 + top}" x2="520" y2="{112 + top}" stroke="{GOLD}" stroke-width="2"/>'
+           f'<text x="146" y="{140 + top}" font-family="{font}" font-style="italic" font-weight="500" font-size="23" fill="{text}">{TAGLINE}</text>'
+           ) if tagline else ""
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 {h}" width="1680" height="{h * 3}">'
+            f'<rect width="560" height="{h}" fill="{bg}"/>'
+            f'<g transform="translate(16,{icon_y})"><svg viewBox="0 0 108 108" width="108" height="108">'
             f'<clipPath id="r"><rect width="108" height="108" rx="26"/></clipPath><g clip-path="url(#r)">'
             f'<rect width="108" height="108" fill="{GREEN}"/>{icon}</g></svg></g>'
-            f'<text x="146" y="74" font-family="Poppins, Montserrat, Roboto, Arial, sans-serif" font-weight="700" font-size="46" fill="{text}">Harambee</text>'
-            f'<text x="148" y="108" font-family="Poppins, Montserrat, Roboto, Arial, sans-serif" font-weight="600" font-size="22" letter-spacing="5" fill="{sub}">TRACKER</text>'
-            f'</svg>\n')
+            f'<text x="146" y="{(62 if tagline else 74) + top}" font-family="{font}" font-weight="700" font-size="46" fill="{text}">Harambee</text>'
+            f'<text x="148" y="{(96 if tagline else 108) + top}" font-family="{font}" font-weight="600" font-size="22" letter-spacing="5" fill="{sub}">TRACKER</text>'
+            + tag + '</svg>\n')
+
 open("store/brand/logo-horizontal.svg", "w").write(lockup(False))
 open("store/brand/logo-horizontal-dark.svg", "w").write(lockup(True))
+open("store/brand/logo-tagline.svg", "w").write(lockup(False, tagline=True))
+open("store/brand/logo-tagline-dark.svg", "w").write(lockup(True, tagline=True))
 
 # ---- Android vector drawables ----
 def vd(paths, w=108):

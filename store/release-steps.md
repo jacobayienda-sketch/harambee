@@ -68,6 +68,7 @@ To rebuild the feature graphic, open `store/feature-graphic.html` in a browser a
 `store/brand/` holds the logo: three people standing together with a gold "confirmed" badge (Harambee = *pulling together*; ✓ = every contribution accounted for).
 - `icon.svg` / `icon-1024.png`: app icon, square (stores add their own rounding)
 - `logo-horizontal(-dark).svg/.png`: icon + "Harambee TRACKER" wordmark, for letterheads, posters and WhatsApp group pictures
+- `logo-tagline(-dark).svg/.png`: the same with the Kiswahili tagline *Kila mchango unahesabiwa* ("Every contribution is counted")
 - `mark-on-light`, `mark-mono`: the symbol alone, in colour or one colour, on transparent backgrounds
 - Colours: green `#0B6E4F`, gold `#F5B83D`, ink `#10241C`
 

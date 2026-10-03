@@ -127,7 +127,19 @@ fun OnboardingScreen(onDone: (createFirst: Boolean) -> Unit) {
             HorizontalPager(pager, Modifier.weight(1f)) { index ->
                 val page = introPages[index]
                 Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (index == 0) AppLogo(112.dp) else Text(page.emoji, fontSize = 72.sp)
+                    if (index == 0) {
+                        AppLogo(112.dp)
+                        Spacer(Modifier.height(16.dp))
+                        // Kiswahili tagline: "Every contribution is counted".
+                        Text(
+                            "Kila mchango unahesabiwa",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    } else {
+                        Text(page.emoji, fontSize = 72.sp)
+                    }
                     Spacer(Modifier.height(24.dp))
                     Text(page.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(12.dp))

@@ -10,6 +10,8 @@ Track Harambee contributions, pledges and totals, and share WhatsApp updates.
 
 **Full description** (max 4000):
 
+Kila mchango unahesabiwa — every contribution is counted.
+
 Collecting contributions for a burial, medical bill, wedding, church project or welfare group on your own M-Pesa number? Harambee Tracker keeps an accurate list and running total for you, and writes the WhatsApp update in seconds.
 
 ✅ ADD CONTRIBUTIONS FAST
